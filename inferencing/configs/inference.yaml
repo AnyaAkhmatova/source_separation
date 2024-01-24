@@ -1,0 +1,17 @@
+name: "one_batch_test_inference"
+wandb_project: "ss"
+resume: "./outputs/2024-01-24/15-54-19/model_best.pth"
+sr: 16000
+n_speakers: 2
+log_step: 1
+input_dir: "./ss_data/test/"
+output_dir: "./results/inference/one_batch_test"
+arch:
+  type: "SpexPlus"
+  args: 
+    n_channels: 64
+    short_kernel: 40
+    middle_kernel: 160
+    long_kernel: 320
+    n_resnetblocks: 3
+    n_tcnblocks: 8

@@ -1,0 +1,16 @@
+torch
+numpy
+tqdm
+matplotlib
+pandas
+
+torchaudio
+pesq
+torchmetrics
+
+librosa
+soundfile
+pyloudnorm
+
+wandb
+hydra-core

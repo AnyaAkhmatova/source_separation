@@ -1,0 +1,53 @@
+name: "one_batch_test"
+wandb_project: "ss"
+n_gpu: 1
+dataset:
+  sr: 16000
+  train:
+    root: "./ss_data/"
+    part: "train"
+    batch_size: 2
+    max_length: 2
+    num_workers: 2
+    pin_memory: True
+  dev:
+    root: "./ss_data/"
+    part: "dev"
+    batch_size: 2
+    max_length: 2
+    num_workers: 2
+    pin_memory: True
+arch:
+  type: "SpexPlus"
+  args: 
+    n_channels: 64
+    short_kernel: 40
+    middle_kernel: 160
+    long_kernel: 320
+    n_resnetblocks: 3
+    n_tcnblocks: 8
+optimizer:
+  type: "Adam"
+  args:
+    lr: 0.01
+    weight_decay: 0
+loss:
+  type: "SpexPlusLoss"
+  args: {}
+metrics:
+  - type: "SISDR"
+    args: {}
+  - type: "PESQ"
+    args: {}
+  - type: "ACC"
+    args: {}
+train_metrics: ["SISDR", "PESQ", "ACC"]
+dev_metrics: ["SISDR", "PESQ"]
+trainer:
+  trainer_batch_size: 2
+  dataset_batch_size: 2
+  epochs: 200
+  save_period: 50
+  monitor: "min loss"
+  early_stop: 6
+  len_epoch: 2
