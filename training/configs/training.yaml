@@ -1,0 +1,59 @@
+name: "spexplus"
+wandb_project: "ss_project"
+n_gpu: 3
+dataset:
+  sr: 16000
+  train:
+    root: "../../data/ss_data/"
+    part: "train"
+    batch_size: 8
+    max_length: 20000
+    num_workers: 4
+    pin_memory: False
+  dev:
+    root: "../../data/ss_data/"
+    part: "dev"
+    batch_size: 8
+    max_length: 5000
+    num_workers: 4
+    pin_memory: False
+arch:
+  type: "SpexPlus"
+  args: 
+    n_channels: 256
+    short_kernel: 20
+    middle_kernel: 80
+    long_kernel: 160
+    n_resnetblocks: 3
+    n_tcnblocks: 8
+optimizer:
+  type: "Adam"
+  args:
+    lr: 0.001
+    weight_decay: 0
+loss:
+  type: "SpexPlusLoss"
+  args: {}
+lr_scheduler:
+  type: "StepLR"
+  args:
+    step_size: 1
+    gamma: 0.5
+metrics:
+  - type: "SISDR"
+    args: {}
+  - type: "PESQ"
+    args: {}
+  - type: "ACC"
+    args: {}
+train_metrics: ["SISDR", "PESQ", "ACC"]
+dev_metrics: ["SISDR", "PESQ"]
+trainer:
+  trainer_batch_size: 8
+  dataset_batch_size: 8
+  epochs: 100
+  save_period: 10
+  monitor: "min dev_loss"
+  early_stop: 6
+  lr_scheduler_wait: 2
+  len_epoch: 2500

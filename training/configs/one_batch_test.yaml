@@ -1,21 +1,21 @@
 name: "one_batch_test"
-wandb_project: "ss"
+wandb_project: "ss_project"
 n_gpu: 1
 dataset:
   sr: 16000
   train:
-    root: "./ss_data/"
+    root: "../../data/ss_data/"
     part: "train"
     batch_size: 2
     max_length: 2
-    num_workers: 2
+    num_workers: 1
     pin_memory: True
   dev:
-    root: "./ss_data/"
+    root: "../../data/ss_data/"
     part: "dev"
     batch_size: 2
     max_length: 2
-    num_workers: 2
+    num_workers: 1
     pin_memory: True
 arch:
   type: "SpexPlus"
@@ -46,8 +46,8 @@ dev_metrics: ["SISDR", "PESQ"]
 trainer:
   trainer_batch_size: 2
   dataset_batch_size: 2
-  epochs: 200
-  save_period: 50
+  epochs: 100
+  save_period: 100
   monitor: "min loss"
   early_stop: 6
   len_epoch: 2

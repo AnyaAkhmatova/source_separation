@@ -27,6 +27,7 @@ class BaseTrainer:
         self.metrics = metrics
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
+        self.lr_scheduler_wait = config["trainer"].get("lr_scheduler_wait", None)
 
         self._last_epoch = 0
 
@@ -106,6 +107,13 @@ class BaseTrainer:
                     best = True
                 else:
                     not_improved_count += 1
+                    if (
+                            self.lr_scheduler is not None and 
+                            self.lr_scheduler_wait is not None and 
+                            not_improved_count > 0 and 
+                            not_improved_count % self.lr_scheduler_wait == 0
+                    ):
+                        self.lr_scheduler.step()
 
                 if not_improved_count > self.early_stop:
                     self.logger.info(

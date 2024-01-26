@@ -135,8 +135,6 @@ class Trainer(BaseTrainer):
             if ((batch_idx + 1) * self.dataset_batch_size) % self.trainer_batch_size == 0:
                 self._clip_grad_norm()
                 self.optimizer.step()
-                if self.lr_scheduler is not None:
-                    self.lr_scheduler.step()
         metrics.update("loss", batch["loss"].item())
 
         for met in metric_names:
@@ -181,10 +179,12 @@ class Trainer(BaseTrainer):
         mix = batch["mix"][ind]
         ref = batch["ref"][ind]
         target = batch["target"][ind]
+        pred = batch["s1"][ind]
         sr = self.config["dataset"]["sr"]
         self.writer.add_audio("mix_audio", mix, sr)
         self.writer.add_audio("ref_audio", ref, sr)
         self.writer.add_audio("target_audio", target, sr)
+        self.writer.add_audio("pred_audio", pred, sr)
 
     @torch.no_grad()
     def get_grad_norm(self, norm_type=2):
