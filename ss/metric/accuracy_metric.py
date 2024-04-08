@@ -7,4 +7,4 @@ class ACC(BaseMetric):
 
     def __call__(self, logits, target_id, **kwargs):
         preds = logits.argmax(-1)
-        return (preds == target_id).float().mean().item()
+        return (preds == target_id).float().mean()

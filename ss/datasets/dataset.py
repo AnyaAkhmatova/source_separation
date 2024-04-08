@@ -10,21 +10,24 @@ class SourceSeparationDataset(Dataset):
     def __init__(self, root, part, max_length=20000):
         self.path = os.path.join(root, part)
         self.max_length = max_length
-        self.mix = sorted(glob(os.path.join(self.path, '*-mixed.wav')))[:max_length]
-        self.target = sorted(glob(os.path.join(self.path, '*-target.wav')))[:max_length]
-        self.ref = sorted(glob(os.path.join(self.path, '*-ref.wav')))[:max_length]
-        self.target_id_data_id = sorted(list(set([mix.split('/')[-1].split('_')[0] for mix in self.mix])))
+
+        self.file_names = sorted(glob(os.path.join(self.path, '*-mixed.wav')))[:self.max_length]
+        
+        self.target_id_data_id = sorted(list(set([file_name.split('/')[-1].split('_')[0] for file_name in self.file_names])))
         self.data_id_target_id = {self.target_id_data_id[target_id]: target_id for target_id in range(len(self.target_id_data_id))}
         self.n_speakers = len(self.target_id_data_id)
 
     def __len__(self):
-        return len(self.mix)
+        return len(self.file_names)
 
     def __getitem__(self, idx):
-        mix, _ = torchaudio.load(self.mix[idx])
-        target, _ = torchaudio.load(self.target[idx])
-        ref, _ = torchaudio.load(self.ref[idx])
-        target_id = self.data_id_target_id[self.mix[idx].split('/')[-1].split('_')[0]]
+        mix_name = self.file_names[idx]
+        target_name = mix_name.split('-')[0] + '-target.wav'
+        ref_name = mix_name.split('-')[0] + '-ref.wav'
+        mix, _ = torchaudio.load(mix_name)
+        target, _ = torchaudio.load(target_name)
+        ref, _ = torchaudio.load(ref_name)
+        target_id = self.data_id_target_id[mix_name.split('/')[-1].split('_')[0]]
         return {
             "mix": mix,
             "target": target,

@@ -2,6 +2,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+
 import wandb
 
 
@@ -19,6 +20,7 @@ class WanDBWriter:
 
             wandb.init(
                 project=config['wandb_project'],
+                name=config['name'],
                 config=dict(config)
             )
             self.wandb = wandb

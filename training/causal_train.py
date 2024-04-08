@@ -17,9 +17,10 @@ from omegaconf import OmegaConf, open_dict
 import ss.loss as module_loss
 import ss.metric as module_metric
 import ss.model as module_arch
-from ss.trainer import Trainer
+from ss.trainer import CausalTrainer
 from ss.utils import init_obj
 from ss.datasets import get_dataloader
+from ss.streamer import Streamer
 
 warnings.filterwarnings("ignore")
 
@@ -65,6 +66,8 @@ def run_training(rank, world_size, config, save_dir):
     dataloaders["train"] = get_dataloader(**config["dataset"]["train"])
     dataloaders["dev"] = get_dataloader(**config["dataset"]["dev"])
 
+    streamer = Streamer(**config["streamer"])
+
     model = init_obj(config["arch"], module_arch, n_speakers=dataloaders["train"].dataset.n_speakers)
     model.to(device)
     model = DistributedDataParallel(model)
@@ -84,19 +87,20 @@ def run_training(rank, world_size, config, save_dir):
     optimizer = init_obj(config["optimizer"], torch.optim, trainable_params)
     lr_scheduler = init_obj(config["lr_scheduler"], torch.optim.lr_scheduler, optimizer)
 
-    trainer = Trainer(rank, 
-                      world_size,
-                      model,
-                      criterion,
-                      metrics,
-                      optimizer,
-                      lr_scheduler,
-                      config,
-                      save_dir,
-                      logger,
-                      device,
-                      dataloaders,
-                      len_epoch=config["trainer"].get("len_epoch", None))
+    trainer = CausalTrainer(rank, 
+                            world_size,
+                            model,
+                            criterion,
+                            metrics,
+                            optimizer,
+                            lr_scheduler,
+                            config,
+                            save_dir,
+                            logger,
+                            device,
+                            dataloaders,
+                            streamer,
+                            len_epoch=config["trainer"].get("len_epoch", None))
 
     trainer.train()
 

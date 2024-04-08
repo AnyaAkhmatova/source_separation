@@ -1,32 +1,35 @@
-name: "one_batch_test"
-wandb_project: "ss"
-n_gpu: 1
+name: "one_batch_test_cont"
+wandb_project: "online_target_source_separation"
+n_gpu: 2
 resume: "./outputs/2024-01-24/15-54-19/model_best.pth"
-continue_from_checkpoint: False
+continue_from_checkpoint: True
 dataset:
   sr: 16000
   train:
-    root: "./ss_data/"
+    root: "../../data/ss_data/"
     part: "train"
     batch_size: 2
-    max_length: 4
-    num_workers: 2
+    max_length: 2
+    num_workers: 1
     pin_memory: True
   dev:
-    root: "./ss_data/"
+    root: "../../data/ss_data/"
     part: "dev"
-    batch_size: 2
+    batch_size: 1
     max_length: 2
-    num_workers: 2
+    num_workers: 1
     pin_memory: True
 arch:
   type: "SpexPlus"
   args: 
     n_channels: 64
+    hidden_channels: 128
+    out_channels: 100
     short_kernel: 40
     middle_kernel: 160
     long_kernel: 320
     n_resnetblocks: 3
+    n_stacked_tcnblocks: 4
     n_tcnblocks: 8
 optimizer:
   type: "Adam"
@@ -36,20 +39,21 @@ optimizer:
 loss:
   type: "SpexPlusLoss"
   args: {}
+lr_scheduler:
+  type: "ReduceLROnPlateau"
+  args:
+    factor: 0.5
+    patience: 2
 metrics:
-  - type: "SISDR"
-    args: {}
-  - type: "PESQ"
-    args: {}
   - type: "ACC"
     args: {}
-train_metrics: ["SISDR", "PESQ", "ACC"]
-dev_metrics: ["SISDR", "PESQ"]
+train_metrics: ["ACC"]
+dev_metrics: []
 trainer:
-  trainer_batch_size: 2
-  dataset_batch_size: 2
-  epochs: 10
-  save_period: 50
+  batch_size: 2
+  epochs: 100
+  save_period: 100
   monitor: "min dev_loss"
   early_stop: 6
-  len_epoch: 2
+  len_epoch: 1
+

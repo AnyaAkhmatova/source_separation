@@ -1,35 +1,46 @@
 from abc import abstractmethod
 from pathlib import Path
 
-import torch
 from numpy import inf
+
+import torch
+import torch.distributed as dist
 
 from ss.wandb import WanDBWriter
 
 
 class BaseTrainer:
-    def __init__(
-            self, 
-            model, 
-            criterion, 
-            metrics, 
-            optimizer, 
-            config, 
-            device,
-            save_dir, 
-            logger,
-            lr_scheduler=None):
-        self.device = device
-        self.config = config
+    def __init__(self, 
+                 rank, 
+                 world_size,
+                 model, 
+                 criterion, 
+                 metrics, 
+                 optimizer, 
+                 lr_scheduler,
+                 config, 
+                 save_dir, 
+                 logger, 
+                 device):
+        self.rank = rank
+        self.world_size = world_size
 
         self.model = model
         self.criterion = criterion
         self.metrics = metrics
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
-        self.lr_scheduler_wait = config["trainer"].get("lr_scheduler_wait", None)
 
-        self._last_epoch = 0
+        self.config = config
+        if self.rank == 0:
+            self.checkpoint_dir = Path(save_dir)
+            self.logger = logger
+            self.writer = WanDBWriter(
+                config, self.logger
+            )
+        self.device = device
+        
+        self.last_epoch = 0
 
         cfg_trainer = config["trainer"]
         self.epochs = cfg_trainer["epochs"]
@@ -49,13 +60,6 @@ class BaseTrainer:
                 self.early_stop = inf
 
         self.start_epoch = 1
-
-        self.checkpoint_dir = Path(save_dir)
-        self.logger = logger
-        self.writer = WanDBWriter(
-            config, self.logger
-        )
-
         if config.get("resume") is not None:
             self._resume_checkpoint(config.resume)
 
@@ -67,20 +71,33 @@ class BaseTrainer:
         try:
             self._train_process()
         except KeyboardInterrupt as e:
-            self.logger.info("Saving model on keyboard interrupt")
-            self._save_checkpoint(self._last_epoch, save_best=False)
+            if self.rank == 0:
+                self.logger.info("Saving model on keyboard interrupt")
+                self._save_checkpoint(self.last_epoch, save_best=False)
             raise e
 
     def _train_process(self):
         not_improved_count = 0
         for epoch in range(self.start_epoch, self.epochs + 1):
-            self._last_epoch = epoch
+            self.last_epoch = epoch
             result = self._train_epoch(epoch)
 
+            result_keys = list(result.keys())
+            result_tensor = []
+            for key in result_keys:
+                result_tensor.append(float(result[key]))
+            
+            result_tensor = torch.tensor(result_tensor, dtype=torch.float32, device=self.device)
+            dist.all_reduce(result_tensor, op=dist.ReduceOp.SUM)
+            result_tensor /= self.world_size
+
             log = {"epoch": epoch}
-            log.update(result)
-            for key, value in log.items():
-                self.logger.info("    {:15s}: {}".format(str(key), value))
+            for i, key in enumerate(result_keys):
+                log[key] = result_tensor[i].item()
+
+            if self.rank == 0:
+                for key, value in log.items():
+                    self.logger.info("    {:15s}: {}".format(str(key), value))
 
             best = False
             if self.mnt_mode != "off":
@@ -92,12 +109,13 @@ class BaseTrainer:
                     else:
                         improved = False
                 except KeyError:
-                    self.logger.warning(
-                        "Warning: Metric '{}' is not found. "
-                        "Model performance monitoring is disabled.".format(
-                            self.mnt_metric
+                    if self.rank == 0:
+                        self.logger.warning(
+                            "Warning: Metric '{}' is not found. "
+                            "Model performance monitoring is disabled.".format(
+                                self.mnt_metric
+                            )
                         )
-                    )
                     self.mnt_mode = "off"
                     improved = False
 
@@ -107,39 +125,34 @@ class BaseTrainer:
                     best = True
                 else:
                     not_improved_count += 1
-                    if (
-                            self.lr_scheduler is not None and 
-                            self.lr_scheduler_wait is not None and 
-                            not_improved_count > 0 and 
-                            not_improved_count % self.lr_scheduler_wait == 0
-                    ):
-                        self.lr_scheduler.step()
 
-                if not_improved_count > self.early_stop:
-                    self.logger.info(
-                        "Validation performance didn't improve for {} epochs. "
-                        "Training stops.".format(self.early_stop)
-                    )
+                if not_improved_count >= self.early_stop:
+                    if self.rank == 0:
+                        self.logger.info(
+                            "Validation performance didn't improve for {} epochs. "
+                            "Training stops.".format(self.early_stop)
+                        )
                     break
+            
+                self.lr_scheduler.step(log[self.mnt_metric])
 
-            if epoch % self.save_period == 0 or best:
-                self._save_checkpoint(epoch, save_best=best, only_best=True)
+            if (epoch % self.save_period == 0 or best) and self.rank == 0:
+                self._save_checkpoint(epoch, save_best=best)
 
-    def _save_checkpoint(self, epoch, save_best=False, only_best=False):
+    def _save_checkpoint(self, epoch, save_best=False):
         arch = type(self.model).__name__
         state = {
             "arch": arch,
-            "state_dict": self.model.state_dict(),
+            "model": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
+            "lr_scheduler": self.lr_scheduler.state_dict(),
             "epoch": epoch,
             "monitor_best": self.mnt_best,
-            "config": self.config,
+            "config": self.config
         }
-        if self.lr_scheduler is not None:
-            state["lr_scheduler"] = self.lr_scheduler.state_dict()
 
         filename = str(self.checkpoint_dir / "checkpoint-epoch{}.pth".format(epoch))
-        if not (only_best and save_best):
+        if not save_best:
             torch.save(state, filename)
             self.logger.info("Saving checkpoint: {} ...".format(filename))
         if save_best:
@@ -149,33 +162,32 @@ class BaseTrainer:
 
     def _resume_checkpoint(self, resume_path):
         resume_path = str(resume_path)
-        self.logger.info("Loading checkpoint: {} ...".format(resume_path))
+        if self.rank == 0:
+            self.logger.info("Loading checkpoint: {} ...".format(resume_path))
         checkpoint = torch.load(resume_path, self.device)
 
-        if checkpoint["config"]["arch"] != self.config["arch"]:
+        if checkpoint["config"]["arch"] != self.config["arch"] and self.rank == 0:
             self.logger.warning(
                 "Warning: Architecture configuration given in config file is different from that "
                 "of checkpoint. This may yield an exception while state_dict is being loaded."
             )
-        self.model.load_state_dict(checkpoint["state_dict"])
+        self.model.load_state_dict(checkpoint["model"])
 
         if self.config.continue_from_checkpoint:
             self.start_epoch = checkpoint["epoch"] + 1
             self.mnt_best = checkpoint["monitor_best"]
 
-            if (
-                    checkpoint["config"]["optimizer"] != self.config["optimizer"] or
-                    checkpoint["config"].get("lr_scheduler", None) != self.config.get("lr_scheduler", None)
-            ):
+            if ((checkpoint["config"]["optimizer"] != self.config["optimizer"] or
+                 checkpoint["config"]["lr_scheduler"] != self.config["lr_scheduler"]) and self.rank == 0):
                 self.logger.warning(
                     "Warning: Optimizer or lr_scheduler given in config file is different "
-                    "from that of checkpoint. Optimizer parameters not being resumed."
+                    "from that of checkpoint. Optimizer and lr_scheduler parameters not being resumed."
                 )
             else:
                 self.optimizer.load_state_dict(checkpoint["optimizer"])
-                if "lr_scheduler" in checkpoint:
-                    self.lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+                self.lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
 
-        self.logger.info(
-            "Checkpoint loaded. Resume training from epoch {}".format(self.start_epoch)
-        )
+        if self.rank == 0:
+            self.logger.info(
+                "Checkpoint loaded. Resume training from epoch {}".format(self.start_epoch)
+            )

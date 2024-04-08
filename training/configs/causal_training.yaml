@@ -1,4 +1,4 @@
-name: "spexplus"
+name: "causal_spexplus"
 wandb_project: "online_target_source_separation"
 n_gpu: 2
 dataset:
@@ -17,6 +17,10 @@ dataset:
     max_length: 5000
     num_workers: 8
     pin_memory: True
+streamer:
+  chunk_window: 4800
+  chunk_step: 2400
+  overlap_add_method: "half"
 arch:
   type: "SpexPlus"
   args: 
@@ -29,6 +33,7 @@ arch:
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 8
+    causal: True
 optimizer:
   type: "Adam"
   args:

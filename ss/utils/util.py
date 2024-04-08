@@ -1,31 +1,11 @@
-from itertools import repeat
 import importlib
 
+import numpy as np
 import pandas as pd
+
 import torch
+import torch.distributed as dist
 
-
-def inf_loop(data_loader):
-    for loader in repeat(data_loader):
-        yield from loader
-
-def prepare_device(n_gpu_use):
-    n_gpu = torch.cuda.device_count()
-    if n_gpu_use > 0 and n_gpu == 0:
-        print(
-            "Warning: There's no GPU available on this machine,"
-            "training will be performed on CPU."
-        )
-        n_gpu_use = 0
-    if n_gpu_use > n_gpu:
-        print(
-            f"Warning: The number of GPU's configured to use is {n_gpu_use}, but only {n_gpu} are "
-            "available on this machine."
-        )
-        n_gpu_use = n_gpu
-    device = torch.device("cuda:0" if n_gpu_use > 0 else "cpu")
-    list_ids = list(range(n_gpu_use))
-    return device, list_ids
 
 def init_obj(obj_dict, default_module, *args, **kwargs):
     if "module" in obj_dict:
@@ -40,8 +20,8 @@ def init_obj(obj_dict, default_module, *args, **kwargs):
 
 
 class MetricTracker:
-    def __init__(self, *keys, writer=None):
-        self.writer = writer
+    def __init__(self, *keys, device=None):
+        self.device = device
         self._data = pd.DataFrame(index=keys, columns=["total", "counts", "average"])
         self.reset()
 
@@ -50,11 +30,17 @@ class MetricTracker:
             self._data[col].values[:] = 0
 
     def update(self, key, value, n=1):
-        # if self.writer is not None:
-        #     self.writer.add_scalar(key, value)
-        self._data.total[key] += value * n
-        self._data.counts[key] += n
+        self._data.total[key] += float(value * n)
+        self._data.counts[key] += float(n)
         self._data.average[key] = self._data.total[key] / self._data.counts[key]
+    
+    def result_sync(self):
+        tensor = torch.tensor(self._data.values.astype(np.float32), dtype=torch.float32, device=self.device)
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+        temp = pd.DataFrame(data=tensor.cpu().numpy(), index=self._data.index, columns=self._data.columns)
+        for key in temp.total.keys():
+            temp.average[key] = temp.total[key] / temp.counts[key]
+        return dict(temp.average)
 
     def avg(self, key):
         return self._data.average[key]
