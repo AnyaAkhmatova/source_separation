@@ -1,5 +1,7 @@
 from .spexplus import SpexPlus
+from .spexplusshort import SpexPlusShort
 
 __all__ = [
-    "SpexPlus"
+    "SpexPlus", 
+    "SpexPlusShort"
 ]

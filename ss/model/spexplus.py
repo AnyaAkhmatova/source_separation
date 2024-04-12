@@ -146,6 +146,7 @@ class SpexPlus(nn.Module):
                  n_tcnblocks, 
                  causal=False):
         super().__init__()
+        self.causal = causal
 
         self.speech_encoder = SpeechEncoder(n_channels, short_kernel, middle_kernel, long_kernel)
         self.speaker_encoder = SpeakerEncoder(n_channels, out_channels, n_resnetblocks, n_speakers)
@@ -154,8 +155,13 @@ class SpexPlus(nn.Module):
 
     def forward(self, x, ref):
         mix_encs, mix_init_len = self.speech_encoder(x)
+
         ref_encs, _ = self.speech_encoder(ref)
         ref_vec, speaker_logits = self.speaker_encoder(ref_encs)
+
+        if self.causal:
+            ref_vec = ref_vec.repeat(x.shape[0] // ref_vec.shape[0], 1)
+
         encs1, encs2, encs3 = self.speaker_extractor(mix_encs, ref_vec)
         s1, s2, s3 = self.speech_decoder(encs1, encs2, encs3, mix_init_len)
         return s1, s2, s3, speaker_logits

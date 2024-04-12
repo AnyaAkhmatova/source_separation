@@ -23,6 +23,7 @@ import ss.metric as module_metric
 import ss.model as module_arch
 from ss.utils import init_obj, MetricTracker
 from ss.datasets import get_dataloader
+from ss.streamer import Streamer
 
 warnings.filterwarnings("ignore")
 
@@ -80,6 +81,8 @@ def run_testing(rank, world_size, config):
     
     dataloader = get_dataloader(**config["dataset"]["test"])
 
+    streamer = Streamer(**config["streamer"])
+
     model = init_obj(config["arch"], module_arch, n_speakers=config["n_speakers"])
     model.to(device)
     model = DistributedDataParallel(model)
@@ -115,10 +118,19 @@ def run_testing(rank, world_size, config):
     model.eval()
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="testing", total=len(dataloader))):
-            for tensor_for_gpu in ["mix", "ref", "target", "lens"]:
+            batch["mix_chunks"], n_chunks = streamer.make_chunks(batch["mix"])
+            for tensor_for_gpu in ["mix_chunks", "ref", "target", "lens"]:
                 batch[tensor_for_gpu] = batch[tensor_for_gpu].to(device)
-            s1, s2, s3, logits = model(batch["mix"], batch["ref"])
-            batch["s1"], batch["s2"], batch["s3"], batch["logits"] = s1, s2, s3, logits
+            
+            batch["s1"], batch["s2"], batch["s3"], batch["logits"] = model(batch["mix_chunks"], batch["ref"])
+            length = batch["target"].shape[-1]
+            batch["s1"] = streamer.apply_overlap_add_method(batch["s1"], n_chunks)
+            batch["s1"] = batch["s1"][:, :length]
+            batch["s2"] = streamer.apply_overlap_add_method(batch["s2"], n_chunks)
+            batch["s2"] = batch["s2"][:, :length]
+            batch["s3"] = streamer.apply_overlap_add_method(batch["s3"], n_chunks)
+            batch["s3"] = batch["s3"][:, :length]
+            
             batch["loss"], batch["sisdr"] = criterion(**batch, is_train=False)
 
             metric_tracker.update("loss", batch["loss"].item())

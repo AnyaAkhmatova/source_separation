@@ -2,38 +2,31 @@ import torch
 from torch import nn
 
 
-def overlap_add_half(chunks, window, step):
-    assert step == window // 2
-    wave = torch.zeros((chunks[0].shape[0], (len(chunks) - 1) * step + window), dtype=chunks[0].dtype, device=chunks[0].device)
-    for i, chunk in enumerate(chunks):
-        wave[:, i * step: i * step + window] = wave[:, i * step: i * step + window] + chunk
-    wave[:, step: wave.shape[-1] - step] = wave[:, step: wave.shape[-1] - step] / 2
-    return wave
+def overlap_add_half(chunks, n_chunks, window, step):
+    batch_size = chunks.shape[0] // n_chunks
+    length = window
 
-def overlap_add_nonintersec(chunks, window, step):
-    assert step == window
-    wave = torch.zeros((chunks[0].shape[0], len(chunks) * window), dtype=chunks[0].dtype, device=chunks[0].device)
-    for i, chunk in enumerate(chunks):
-        wave[:, i * window: (i + 1) * window] = chunk
-    return wave
+    chunks = chunks.reshape(n_chunks, batch_size, length).permute(1, 0, 2)
+    chunks = chunks.reshape(batch_size, -1, step)
+    first_part = chunks[:, :1, :]
+    last_part = chunks[:, -1:, :]
+    chunks = chunks[:, 1: -1, :].reshape(batch_size, -1, window)
 
-def overlap_add_sin(chunks, window, step):
-    assert step == window // 2
-    wave = torch.zeros((chunks[0].shape[0], (len(chunks) - 1) * step + window), dtype=chunks[0].dtype, device=chunks[0].device)
-    coef = torch.sin(torch.arange(step) / (step - 1) * torch.acos(torch.zeros(1)).item()).to(wave.device)
-    for i, chunk in enumerate(chunks):
-        if i == 0:
-            wave[:, i * step: i * step + window] = chunk
-        else:
-            wave[:, i * step: (i + 1) * step] = wave[:, i * step: (i + 1) * step] * (1 - coef) + chunk[: step] * coef
-            wave[:, (i + 1) * step: i * step + window] = chunk[step:]
-    return wave
+    chunks = (chunks @ torch.eye(step, dtype=chunks.dtype, device=chunks.device).repeat(2, 1).unsqueeze(0)) / 2
+    chunks = torch.cat([first_part, chunks, last_part], dim=1).reshape(batch_size, -1)
+    return chunks
+
+def overlap_add_nonintersec(chunks, n_chunks, window, step):
+    batch_size = chunks.shape[0] // n_chunks
+    length = window
+
+    chunks = chunks.reshape(n_chunks, batch_size, length).permute(1, 0, 2).reshape(batch_size, -1)
+    return chunks
 
 
 overlap_add_methods = {
     'half': overlap_add_half,
-    'nonintersec': overlap_add_nonintersec,
-    'sin': overlap_add_sin
+    'nonintersec': overlap_add_nonintersec
 }
 
 
@@ -41,20 +34,28 @@ class Streamer:
     def __init__(self, chunk_window, chunk_step, overlap_add_method):
         self.chunk_window = chunk_window
         self.chunk_step = chunk_step
-        assert chunk_step <= chunk_window 
+        self.overlap_add_method_name = overlap_add_method
+        assert overlap_add_method in ['half', 'nonintersec'], "overlap_add_method not supported"
+        if overlap_add_method == 'half':
+            assert chunk_step == chunk_window // 2
+        else:
+            assert chunk_step == chunk_window
         self.overlap_add_method = overlap_add_methods[overlap_add_method]
 
-    def iterate_through(self, mix):
+    def make_chunks(self, mix):
         if (mix.shape[-1] - self.chunk_window) % self.chunk_step != 0:
             mix = nn.functional.pad(mix, (0, 
                 self.chunk_step - (mix.shape[-1] - self.chunk_window) % self.chunk_step
             ))
+        n_chunks = (mix.shape[-1] - self.chunk_window) // self.chunk_step + 1
+        if self.overlap_add_method_name == 'half':
+            mix_chunks = mix.reshape(mix.shape[0], n_chunks + 1, self.chunk_step)
+            mix_chunks = torch.cat([mix_chunks[:, : -1, :], mix_chunks[:, 1:, :]], dim=2).permute(1, 0, 2).reshape(-1, self.chunk_window)
+        else:
+            mix_chunks = mix.reshape(mix.shape[0], n_chunks, self.chunk_window).permute(1, 0, 2).reshape(-1, self.chunk_window)
+        return mix_chunks, n_chunks
 
-        for i in range(0, (mix.shape[-1] - self.chunk_window) // self.chunk_step + 1):
-            chunk_mix = mix[:, i * self.chunk_step: i * self.chunk_step + self.chunk_window]
-            yield chunk_mix
-
-    def apply_overlap_add_method(self, chunks):
-        assert len(chunks) != 0, "no chunks to overlap_add"
-        return self.overlap_add_method(chunks, self.chunk_window, self.chunk_step)
+    def apply_overlap_add_method(self, chunks, n_chunks):
+        assert n_chunks != 0, "no chunks to overlap_add"
+        return self.overlap_add_method(chunks, n_chunks, self.chunk_window, self.chunk_step)
 

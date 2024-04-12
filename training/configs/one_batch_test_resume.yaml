@@ -1,7 +1,7 @@
-name: "one_batch_test_cont"
+name: "one_batch_test_causal_spexplus"
 wandb_project: "online_target_source_separation"
-n_gpu: 2
-resume: "./outputs/2024-01-24/15-54-19/model_best.pth"
+n_gpu: 1
+resume: "./outputs/2024-04-09/14-32-51/model_best.pth"
 continue_from_checkpoint: True
 dataset:
   sr: 16000
@@ -9,21 +9,25 @@ dataset:
     root: "../../data/ss_data/"
     part: "train"
     batch_size: 2
-    max_length: 2
-    num_workers: 1
+    max_length: 4
+    num_workers: 0
     pin_memory: True
   dev:
     root: "../../data/ss_data/"
     part: "dev"
     batch_size: 1
     max_length: 2
-    num_workers: 1
+    num_workers: 0
     pin_memory: True
+streamer:
+  chunk_window: 4800
+  chunk_step: 2400
+  overlap_add_method: "half"
 arch:
   type: "SpexPlus"
   args: 
     n_channels: 64
-    hidden_channels: 128
+    hidden_channels: 64
     out_channels: 100
     short_kernel: 40
     middle_kernel: 160
@@ -31,6 +35,7 @@ arch:
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 8
+    causal: True
 optimizer:
   type: "Adam"
   args:
@@ -53,7 +58,6 @@ trainer:
   batch_size: 2
   epochs: 100
   save_period: 100
-  monitor: "min dev_loss"
-  early_stop: 6
-  len_epoch: 1
-
+  monitor: "min loss"
+  early_stop: 100
+  grad_norm_clip: 60

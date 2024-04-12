@@ -391,7 +391,7 @@ class CausalTrainer(BaseTrainer):
     
     @staticmethod
     def move_batch_to_device(batch, device, is_train):
-        for tensor_for_gpu in ["mix", "ref", "target", "lens"]:
+        for tensor_for_gpu in ["mix_chunks", "ref", "target", "lens"]:
             batch[tensor_for_gpu] = batch[tensor_for_gpu].to(device, non_blocking=True)
         if is_train:
             batch["target_id"] = batch["target_id"].to(device, non_blocking=True)
@@ -407,29 +407,20 @@ class CausalTrainer(BaseTrainer):
         is_train = (self.mode == "train")
 
         if is_train:
+            batch["mix_chunks"], n_chunks = self.streamer.make_chunks(batch["mix"])
             batch = self.move_batch_to_device(batch, self.device, is_train)
 
             if batch_idx % self.grad_accum_step == 0:
                 self.optimizer.zero_grad(set_to_none=True)
 
             with torch.cuda.amp.autocast():
-                batch["s1"], batch["s2"], batch["s3"] = [], [], []
-                for i, chunk_mix in enumerate(self.streamer.iterate_through(batch['mix'])):
-                    s1, s2, s3, logits = self.model(chunk_mix, batch["ref"])
-                    batch["s1"].append(s1)
-                    batch["s2"].append(s2)
-                    batch["s3"].append(s3)
-                    if i == 0:
-                        batch["logits"] = logits
-                    else:
-                        batch["logits"] = batch["logits"] + logits
-                batch["logits"] = batch["logits"] / len(batch["s1"])
+                batch["s1"], batch["s2"], batch["s3"], batch["logits"] = self.model(batch["mix_chunks"], batch["ref"])
                 length = batch["target"].shape[-1]
-                batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"])
+                batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
                 batch["s1"] = batch["s1"][:, :length]
-                batch["s2"] = self.streamer.apply_overlap_add_method(batch["s2"])
+                batch["s2"] = self.streamer.apply_overlap_add_method(batch["s2"], n_chunks)
                 batch["s2"] = batch["s2"][:, :length]
-                batch["s3"] = self.streamer.apply_overlap_add_method(batch["s3"])
+                batch["s3"] = self.streamer.apply_overlap_add_method(batch["s3"], n_chunks)
                 batch["s3"] = batch["s3"][:, :length]
                 
                 batch["loss"], batch["sisdr"] = self.criterion(**batch, is_train=is_train)
@@ -443,25 +434,16 @@ class CausalTrainer(BaseTrainer):
                 self.scaler.update()
 
         else:
+            batch["mix_chunks"], n_chunks = self.streamer.make_chunks(batch["mix"])
             batch = self.move_batch_to_device(batch, self.device, is_train)
-
-            batch["s1"], batch["s2"], batch["s3"] = [], [], []
-            for i, chunk_mix in enumerate(self.streamer.iterate_through(batch['mix'])):
-                s1, s2, s3, logits = self.model(chunk_mix, batch["ref"])
-                batch["s1"].append(s1)
-                batch["s2"].append(s2)
-                batch["s3"].append(s3)
-                if i == 0:
-                    batch["logits"] = logits
-                else:
-                    batch["logits"] = batch["logits"] + logits
-            batch["logits"] = batch["logits"] / len(batch["s1"])
+            
+            batch["s1"], batch["s2"], batch["s3"], batch["logits"] = self.model(batch["mix_chunks"], batch["ref"])
             length = batch["target"].shape[-1]
-            batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"])
+            batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
             batch["s1"] = batch["s1"][:, :length]
-            batch["s2"] = self.streamer.apply_overlap_add_method(batch["s2"])
+            batch["s2"] = self.streamer.apply_overlap_add_method(batch["s2"], n_chunks)
             batch["s2"] = batch["s2"][:, :length]
-            batch["s3"] = self.streamer.apply_overlap_add_method(batch["s3"])
+            batch["s3"] = self.streamer.apply_overlap_add_method(batch["s3"], n_chunks)
             batch["s3"] = batch["s3"][:, :length]
             
             batch["loss"], batch["sisdr"] = self.criterion(**batch, is_train=is_train)

@@ -1,6 +1,6 @@
-name: "one_batch_test_causal_spexplus"
-wandb_project: "online_target_source_separation"
-n_gpu: 2
+name: "one_batch_test_causal_spexplusshort"
+wandb_project: "ss"
+n_gpu: 1
 dataset:
   sr: 16000
   train:
@@ -8,28 +8,26 @@ dataset:
     part: "train"
     batch_size: 2
     max_length: 4
-    num_workers: 0
+    num_workers: 1
     pin_memory: True
   dev:
     root: "../../data/ss_data/"
     part: "dev"
     batch_size: 1
     max_length: 2
-    num_workers: 0
+    num_workers: 1
     pin_memory: True
 streamer:
   chunk_window: 4800
   chunk_step: 2400
   overlap_add_method: "half"
 arch:
-  type: "SpexPlus"
+  type: "SpexPlusShort"
   args: 
     n_channels: 64
     hidden_channels: 64
-    out_channels: 100
+    out_channels: 10
     short_kernel: 40
-    middle_kernel: 160
-    long_kernel: 320
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 8
@@ -37,10 +35,10 @@ arch:
 optimizer:
   type: "Adam"
   args:
-    lr: 0.01
+    lr: 0.001
     weight_decay: 0
 loss:
-  type: "SpexPlusLoss"
+  type: "SpexPlusShortLoss"
   args: {}
 lr_scheduler:
   type: "ReduceLROnPlateau"
@@ -53,6 +51,8 @@ metrics:
 train_metrics: ["ACC"]
 dev_metrics: []
 trainer:
+  type: "ShortCausalTrainer"
+  args: {}
   batch_size: 2
   epochs: 100
   save_period: 100
