@@ -133,8 +133,8 @@ class SpexPlusShort(nn.Module):
         ref_encs, _ = self.speech_encoder(ref)
         ref_vec, speaker_logits = self.speaker_encoder(ref_encs)
 
-        if self.causal:
-            ref_vec = ref_vec.repeat(x.shape[0] // ref_vec.shape[0], 1)
+        # if self.causal:
+        ref_vec = ref_vec.repeat(x.shape[0] // ref_vec.shape[0], 1)
 
         encs1 = self.speaker_extractor(mix_encs, ref_vec)
         s1 = self.speech_decoder(encs1, mix_init_len)

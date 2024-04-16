@@ -1,5 +1,5 @@
-name: "one_batch_test_causal_spexplusshort"
-wandb_project: "ss"
+name: "one_batch_test_spexplusshortrnn"
+wandb_project: "online_target_source_separation"
 n_gpu: 1
 dataset:
   sr: 16000
@@ -22,7 +22,7 @@ streamer:
   chunk_step: 2400
   overlap_add_method: "half"
 arch:
-  type: "SpexPlusShort"
+  type: "SpexPlusShortRNN"
   args: 
     n_channels: 64
     hidden_channels: 64
@@ -31,11 +31,11 @@ arch:
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 8
-    causal: True
+    causal: False
 optimizer:
   type: "Adam"
   args:
-    lr: 0.001
+    lr: 0.01
     weight_decay: 0
 loss:
   type: "SpexPlusShortLoss"

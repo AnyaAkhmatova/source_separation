@@ -1,0 +1,20 @@
+audios_dir: "../../data/LibriSpeech/"
+audio_template: "*.flac"
+random_state: 42
+mix_generation_args:
+  snr_levels: [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
+  num_workers: 10
+  update_steps: 10
+  sr: 16000
+  trim_db: 20
+  vad_db: 20
+  audio_len: 3
+  ref_max_len: 10
+  use_vad_merge: True
+train:
+  part: "train-clean-100"
+  out_folder: "../../data/ss_data_with_vad_merge/train/"
+  max_n_speakers: 101
+  nfiles: 7000
+  test: False
+

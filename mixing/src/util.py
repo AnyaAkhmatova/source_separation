@@ -46,6 +46,8 @@ def fix_length(s1, s2, min_or_max='max'):
 
 def create_mix(idx, triplet, snr_levels, out_dir, test=False, sr=16000, **kwargs):
     trim_db, vad_db = kwargs["trim_db"], kwargs["vad_db"]
+    use_vad_merge = kwargs.get("use_vad_merge", False)
+
     audioLen = kwargs["audio_len"]
     refMaxLen = kwargs["ref_max_len"] * sr
 
@@ -93,7 +95,8 @@ def create_mix(idx, triplet, snr_levels, out_dir, test=False, sr=16000, **kwargs
     if not test:
         ref = ref[:refMaxLen]
 
-        # s1, s2 = vad_merge(s1, vad_db), vad_merge(s2, vad_db)
+        if use_vad_merge:
+            s1, s2 = vad_merge(s1, vad_db), vad_merge(s2, vad_db)
         s1_cut, s2_cut = cut_audios(s1, s2, audioLen, sr)
 
         for i in range(len(s1_cut)):

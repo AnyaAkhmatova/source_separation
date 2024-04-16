@@ -116,3 +116,55 @@ class TCNBlockRef(nn.Module):
         y = self.gln2(self.prelu2(self.deconv(y)))
         y = self.conv2(y) + x
         return y
+
+
+class TCNBlockRNN(TCNBlock):
+    def __init__(self,
+                 n_channels,
+                 hidden_channels,
+                 dilation,
+                 causal=False):
+        super().__init__(n_channels,
+                         hidden_channels,
+                         dilation,
+                         causal)
+
+    def forward(self, x, memory):
+        memory = memory.unsqueeze(-1).repeat(1, 1, x.shape[-1])
+        y = self.gln1(self.prelu1(self.conv1(x + memory)))
+        if not self.causal:
+            y = nn.functional.pad(y, (self.dilation, self.dilation))
+        else:
+            y = nn.functional.pad(y, (self.dilation * 2, 0))
+        y = self.gln2(self.prelu2(self.deconv(y)))
+        y = self.conv2(y) + x
+        return y
+
+
+class TCNBlockRefRNN(TCNBlockRef):
+    def __init__(self,
+                 n_channels,
+                 hidden_channels,
+                 dilation,
+                 ref_dim,
+                 causal=False):
+        super().__init__(n_channels,
+                         hidden_channels,
+                         dilation,
+                         ref_dim,
+                         causal)
+
+    def forward(self, x, ref, memory):
+        ref = ref.unsqueeze(-1).repeat(1, 1, x.shape[-1])
+        memory = memory.unsqueeze(-1).repeat(1, 1, x.shape[-1])
+        y = torch.cat([x + memory, ref], 1)
+        y = self.gln1(self.prelu1(self.conv1(y)))
+        if not self.causal:
+            y = nn.functional.pad(y, (self.dilation, self.dilation))
+        else:
+            y = nn.functional.pad(y, (self.dilation * 2, 0))
+        y = self.gln2(self.prelu2(self.deconv(y)))
+        y = self.conv2(y) + x
+        return y
+    
+    

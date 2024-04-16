@@ -36,6 +36,7 @@ class MetricTracker:
     
     def result_sync(self):
         tensor = torch.tensor(self._data.values.astype(np.float32), dtype=torch.float32, device=self.device)
+        tensor = tensor.contiguous()
         dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
         temp = pd.DataFrame(data=tensor.cpu().numpy(), index=self._data.index, columns=self._data.columns)
         for key in temp.total.keys():
