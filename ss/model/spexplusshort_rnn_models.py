@@ -2,35 +2,51 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .tcn_block import TCNBlockRef, TCNBlock
+from .tcn_block import TCNBlockRef, TCNBlock, TCNBlockRefReduceChannels
 
 from .spexplusshort import SpeechEncoderShort, SpeakerEncoderShort, SpeechDecoderShort
 
 
 class SpeakerExtractorShortRNNLike(nn.Module):
-    def __init__(self, n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal=False):
+    def __init__(self, n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, dim, causal=False):
         super().__init__()
         self.n_channels = n_channels
         self.hidden_channels = hidden_channels
         self.out_channels = out_channels
         self.n_stacked_tcnblocks = n_stacked_tcnblocks
         self.n_tcnblocks = n_tcnblocks
+        self.dim = dim
         self.causal = causal
 
         self.ln1 = nn.LayerNorm(n_channels)
         self.conv1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)
 
         self.stacked_tcnblocks = []
-        for _ in range(n_stacked_tcnblocks):
+        if dim == -1:
+            for _ in range(n_stacked_tcnblocks):
+                self.stacked_tcnblocks.append(
+                    nn.ModuleList(
+                        [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                        *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    )
+                )
+        else:
+            for _ in range(n_stacked_tcnblocks - 1):
+                self.stacked_tcnblocks.append(
+                    nn.ModuleList(
+                        [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                        *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    )
+                )
             self.stacked_tcnblocks.append(
                 nn.ModuleList(
-                    [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
-                     *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    [TCNBlockRefReduceChannels(n_channels * 2, n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                    *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
                 )
             )
         self.stacked_tcnblocks = nn.ModuleList(self.stacked_tcnblocks)
 
-        self.make_memory = nn.Conv1d(n_channels, n_channels, kernel_size=1)
+        self.make_memory = TCNBlock(n_channels, hidden_channels, dilation=2**0, causal=causal)
 
         self.mask1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)
         self.relu = nn.ReLU()
@@ -42,9 +58,13 @@ class SpeakerExtractorShortRNNLike(nn.Module):
         y = self.conv1(y)
         for i in range(0, len(self.stacked_tcnblocks) - 1):
             y = self.apply_stacked_tcn_blocks(self.stacked_tcnblocks[i], y, ref)
-        y = torch.cat([memory, y], dim=-1)
+        if self.dim == -1:
+            y = torch.cat([memory, y], dim=-1)
+        else:
+            y = torch.cat([y, memory], dim=-2)
         y = self.apply_stacked_tcn_blocks(self.stacked_tcnblocks[-1], y, ref)
-        y = y[:, :, y.shape[-1]//2:]
+        if self.dim == -1:
+            y = y[:, :, y.shape[-1]//2:]
         new_memory = self.make_memory(y)
         mask1 = self.relu(self.mask1(y))
         encs1 = x * mask1
@@ -58,30 +78,46 @@ class SpeakerExtractorShortRNNLike(nn.Module):
 
 
 class SpeakerExtractorShortGRULike(nn.Module):
-    def __init__(self, n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal=False):
+    def __init__(self, n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, dim, causal=False):
         super().__init__()
         self.n_channels = n_channels
         self.hidden_channels = hidden_channels
         self.out_channels = out_channels
         self.n_stacked_tcnblocks = n_stacked_tcnblocks
         self.n_tcnblocks = n_tcnblocks
+        self.dim = dim
         self.causal = causal
 
         self.ln1 = nn.LayerNorm(n_channels)
         self.conv1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)
 
         self.stacked_tcnblocks = []
-        for _ in range(n_stacked_tcnblocks):
+        if self.dim == -1:
+            for _ in range(n_stacked_tcnblocks):
+                self.stacked_tcnblocks.append(
+                    nn.ModuleList(
+                        [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                        *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    )
+                )
+        else:
+            for _ in range(n_stacked_tcnblocks - 1):
+                self.stacked_tcnblocks.append(
+                    nn.ModuleList(
+                        [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                        *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    )
+                )
             self.stacked_tcnblocks.append(
                 nn.ModuleList(
-                    [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
-                     *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    [TCNBlockRefReduceChannels(n_channels * 2, n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                    *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
                 )
             )
         self.stacked_tcnblocks = nn.ModuleList(self.stacked_tcnblocks)
 
         self.gate = nn.Conv1d(n_channels, n_channels, kernel_size=1)
-        self.make_memory = nn.Conv1d(n_channels, n_channels, kernel_size=1)
+        self.make_memory = TCNBlock(n_channels, hidden_channels, dilation=2**0, causal=causal)
 
         self.mask1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)
         self.relu = nn.ReLU()
@@ -93,9 +129,13 @@ class SpeakerExtractorShortGRULike(nn.Module):
         y = self.conv1(y)
         for i in range(0, len(self.stacked_tcnblocks) - 1):
             y = self.apply_stacked_tcn_blocks(self.stacked_tcnblocks[i], y, ref)
-        y = torch.cat([memory, y], dim=-1)
+        if self.dim == -1:
+            y = torch.cat([memory, y], dim=-1)
+        else:
+            y = torch.cat([y, memory], dim=-2)
         y = self.apply_stacked_tcn_blocks(self.stacked_tcnblocks[-1], y, ref)
-        y = y[:, :, y.shape[-1]//2:]
+        if self.dim == -1:
+            y = y[:, :, y.shape[-1]//2:]
         z = F.sigmoid(self.gate(y))
         n = self.make_memory(y)
         new_memory = (1 - z) * n + z * memory
@@ -121,6 +161,7 @@ class SpexPlusShortRNNModel(nn.Module):
                  n_stacked_tcnblocks,
                  n_tcnblocks,
                  rnn_type,
+                 dim=-1,
                  causal=False):
         super().__init__()
         self.causal = causal
@@ -129,9 +170,9 @@ class SpexPlusShortRNNModel(nn.Module):
         self.speaker_encoder = SpeakerEncoderShort(n_channels, out_channels, n_resnetblocks, n_speakers)
         assert rnn_type in ["rnn", "gru"], "rnn_type not implemented"
         if rnn_type == 'rnn':
-            self.speaker_extractor = SpeakerExtractorShortRNNLike(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal)
+            self.speaker_extractor = SpeakerExtractorShortRNNLike(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, dim, causal)
         else:
-            self.speaker_extractor = SpeakerExtractorShortGRULike(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal)        
+            self.speaker_extractor = SpeakerExtractorShortGRULike(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, dim, causal)        
         self.speech_decoder = SpeechDecoderShort(n_channels, short_kernel)
 
     def forward_chunk(self, x, ref_vec, memory):

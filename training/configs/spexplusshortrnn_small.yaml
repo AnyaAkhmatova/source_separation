@@ -2,7 +2,7 @@ name: "spexplusshortrnn_small"
 wandb_project: "online_target_source_separation"
 n_gpu: 2
 resume: "./outputs/2024-04-17/21-31-43/model_best.pth"
-continue_from_checkpoint: True
+continue_from_checkpoint: False
 dataset:
   sr: 16000
   train:
