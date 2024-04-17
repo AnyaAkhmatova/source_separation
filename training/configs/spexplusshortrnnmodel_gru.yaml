@@ -1,17 +1,17 @@
-name: "spexplusshort_rnn_model_rnn"
-wandb_project: "ss_kaggle"
+name: "spexplusshortrnnmodel_gru"
+wandb_project: "online_target_source_separation"
 n_gpu: 2
 dataset:
   sr: 16000
   train:
-    root: "/kaggle/input/online-target-source-separation/data/ss_data"
+    root: "../../data/ss_data/"
     part: "train"
     batch_size: 8
     max_length: 20000
     num_workers: 8
     pin_memory: True
   dev:
-    root: "/kaggle/input/online-target-source-separation/data/ss_data"
+    root: "../../data/ss_data/"
     part: "dev"
     batch_size: 8
     max_length: 5000
@@ -24,19 +24,20 @@ streamer:
 arch:
   type: "SpexPlusShortRNNModel"
   args: 
-    n_channels: 128
-    hidden_channels: 256
+    n_channels: 256
+    hidden_channels: 512
     out_channels: 100
     short_kernel: 40
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 8
+    rnn_type: "gru"
     causal: False
 optimizer:
-  type: "AdamW"
+  type: "Adam"
   args:
-    lr: 0.0001
-    weight_decay: 0.00001
+    lr: 0.001
+    weight_decay: 0
 loss:
   type: "SpexPlusShortLoss"
   args: {}

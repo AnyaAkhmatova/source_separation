@@ -1,8 +1,6 @@
-name: "spexplusshortrnn_cont"
+name: "spexplusshortrnnmodel_rnn"
 wandb_project: "online_target_source_separation"
 n_gpu: 2
-resume: "./outputs/2024-04-17/03-03-28/model_best.pth"
-continue_from_checkpoint: True
 dataset:
   sr: 16000
   train:
@@ -24,7 +22,7 @@ streamer:
   chunk_step: 2400
   overlap_add_method: "half"
 arch:
-  type: "SpexPlusShortRNN"
+  type: "SpexPlusShortRNNModel"
   args: 
     n_channels: 256
     hidden_channels: 512
@@ -33,6 +31,7 @@ arch:
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 8
+    rnn_type: "rnn"
     causal: False
 optimizer:
   type: "Adam"

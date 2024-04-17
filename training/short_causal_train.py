@@ -63,8 +63,8 @@ def run_training(rank, world_size, config, save_dir):
     setup(rank, world_size)
 
     dataloaders = {}
-    dataloaders["train"] = get_dataloader(**config["dataset"]["train"])
-    dataloaders["dev"] = get_dataloader(**config["dataset"]["dev"])
+    dataloaders["train"], sampler = get_dataloader(**config["dataset"]["train"])
+    dataloaders["dev"], _ = get_dataloader(**config["dataset"]["dev"])
 
     streamer = Streamer(**config["streamer"])
 
@@ -101,6 +101,7 @@ def run_training(rank, world_size, config, save_dir):
                        logger,
                        device,
                        dataloaders,
+                       sampler,
                        streamer,
                        len_epoch=config["trainer"].get("len_epoch", None))
 

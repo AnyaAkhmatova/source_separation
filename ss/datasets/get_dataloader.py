@@ -7,11 +7,11 @@ from .collate_fn import collate_fn
 
 def get_dataloader(root, part, batch_size, max_length=20000, filenames_path=None, num_workers=8, pin_memory=True):
     dataset = SourceSeparationDataset(root, part, max_length, filenames_path)
-    shuffle = True
+    sampler = DistributedSampler(dataset, shuffle=(True if part == "train" else False))
     dataloader = DataLoader(dataset, 
                             batch_size=batch_size, 
-                            sampler=DistributedSampler(dataset, shuffle=shuffle),
+                            sampler=sampler,
                             num_workers=num_workers, 
                             collate_fn=collate_fn,
                             pin_memory=pin_memory)
-    return dataloader
+    return dataloader, sampler

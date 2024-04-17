@@ -1,4 +1,4 @@
-name: "one_batch_test_spexplusshortrnn"
+name: "one_batch_test_spexplusshortmodel_rnn"
 wandb_project: "online_target_source_separation"
 n_gpu: 1
 dataset:
@@ -22,7 +22,7 @@ streamer:
   chunk_step: 2400
   overlap_add_method: "half"
 arch:
-  type: "SpexPlusShortRNN"
+  type: "SpexPlusShortRNNModel"
   args: 
     n_channels: 64
     hidden_channels: 64
@@ -31,6 +31,7 @@ arch:
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 8
+    rnn_type: "rnn"
     causal: False
 optimizer:
   type: "Adam"

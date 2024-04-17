@@ -23,6 +23,7 @@ class Trainer(BaseTrainer):
                  logger,
                  device,
                  dataloaders,
+                 sampler,
                  len_epoch=None,
                  skip_oom=True):
         super().__init__(rank, 
@@ -40,6 +41,7 @@ class Trainer(BaseTrainer):
         self.skip_oom = skip_oom
         
         self.train_dataloader = dataloaders["train"]        
+        self.train_sampler = sampler
         self.evaluation_dataloaders = {k: v for k, v in dataloaders.items() if k != "train"}
 
         self.batch_size = self.config["trainer"]["batch_size"]
@@ -67,6 +69,7 @@ class Trainer(BaseTrainer):
         self.mode = "train"
         self.model.train()
         self.train_metrics.reset()
+        self.train_sampler.set_epoch(epoch)
 
         if self.rank == 0:
             self.writer.set_step((epoch - 1) * self.len_epoch)
@@ -257,6 +260,7 @@ class CausalTrainer(BaseTrainer):
                  logger,
                  device,
                  dataloaders,
+                 sampler,
                  streamer,
                  len_epoch=None,
                  skip_oom=True):
@@ -275,6 +279,7 @@ class CausalTrainer(BaseTrainer):
         self.skip_oom = skip_oom
         
         self.train_dataloader = dataloaders["train"]        
+        self.train_sampler = sampler
         self.evaluation_dataloaders = {k: v for k, v in dataloaders.items() if k != "train"}
         self.streamer = streamer
 
@@ -303,6 +308,7 @@ class CausalTrainer(BaseTrainer):
         self.mode = "train"
         self.model.train()
         self.train_metrics.reset()
+        self.train_sampler.set_epoch(epoch)
 
         if self.rank == 0:
             self.writer.set_step((epoch - 1) * self.len_epoch)

@@ -62,8 +62,8 @@ def run_training(rank, world_size, config, save_dir):
     setup(rank, world_size)
 
     dataloaders = {}
-    dataloaders["train"] = get_dataloader(**config["dataset"]["train"])
-    dataloaders["dev"] = get_dataloader(**config["dataset"]["dev"])
+    dataloaders["train"], sampler = get_dataloader(**config["dataset"]["train"])
+    dataloaders["dev"], _ = get_dataloader(**config["dataset"]["dev"])
 
     model = init_obj(config["arch"], module_arch, n_speakers=dataloaders["train"].dataset.n_speakers)
     model.to(device)
@@ -96,6 +96,7 @@ def run_training(rank, world_size, config, save_dir):
                       logger,
                       device,
                       dataloaders,
+                      sampler, 
                       len_epoch=config["trainer"].get("len_epoch", None))
 
     trainer.train()
