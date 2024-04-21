@@ -1,61 +1,26 @@
+import torch
 import torch.nn as nn
 
 from .tcn_block import TCNBlockRef, TCNBlock
 from .resnet_block import ResNetBlock
+from .spexplusshort import SpeechEncoderShort, SpeakerEncoderShort, SpeechDecoderShort
 
 
-class SpeechEncoderShort(nn.Module):
-    def __init__(self, n_channels, short_kernel):
+class FMS(nn.Module):
+    def __init__(self, in_features, out_features):
         super().__init__()
-        self.n_channels = n_channels 
-        self.short_kernel = short_kernel
-
-        self.encoder_short = nn.Conv1d(1, n_channels, short_kernel, stride=short_kernel//2)
-        self.relu = nn.ReLU()
-
+        self.fc = nn.Linear(in_features, out_features, bias=True)
+        self.sigmoid = nn.Sigmoid()
+    
     def forward(self, x):
-        init_len = x.shape[-1]
-        if (init_len - self.short_kernel) % (self.short_kernel // 2) != 0:
-            x = nn.functional.pad(x, (0, 
-                (self.short_kernel // 2) - (init_len - self.short_kernel) % (self.short_kernel // 2)
-            ))
-        x = x.unsqueeze(1)
-        y = self.relu(self.encoder_short(x))
-        return y, init_len
+        y, _ = torch.max(x, dim=-1)
+        y = self.sigmoid(self.fc(y))
+        y = y.unsqueeze(-1)
+        y = x * y + y
+        return y
 
 
-class SpeakerEncoderShort(nn.Module):
-    def __init__(self, in_channels, out_channels, n_resnetblocks, n_speakers):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.n_resnetblocks = n_resnetblocks
-        self.n_speakers = n_speakers
-
-        self.ln1 = nn.LayerNorm(in_channels)
-        self.conv1 = nn.Conv1d(in_channels, in_channels, kernel_size=1)
-        self.resnetblocks = nn.ModuleList(
-            [ResNetBlock(in_channels, in_channels) for _ in range(n_resnetblocks//2)] + \
-            [ResNetBlock(in_channels, out_channels) for _ in range(1)] + \
-            [ResNetBlock(out_channels, out_channels) for _ in range(n_resnetblocks - n_resnetblocks//2 - 1)]
-        )
-        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=1)
-        self.linear = nn.Linear(out_channels, n_speakers)
-
-    def forward(self, x):
-        y = self.ln1(x.transpose(1, 2)).transpose(1, 2)
-        y = self.conv1(y)
-        for block in self.resnetblocks:
-            y = block(y)
-        y = self.conv2(y)
-        ref_vec = y.mean(2)
-        if self.training:
-            y = self.linear(ref_vec)
-            return ref_vec, y
-        return ref_vec
-
-
-class SpeakerExtractorShort(nn.Module):
+class SpeakerExtractorShortMod(nn.Module):
     def __init__(self, n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal=False):
         super().__init__()
         self.n_channels = n_channels
@@ -69,12 +34,15 @@ class SpeakerExtractorShort(nn.Module):
         self.conv1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)
 
         self.stacked_tcnblocks = []
+        self.fmss = []
         for _ in range(n_stacked_tcnblocks):
             self.stacked_tcnblocks.append(nn.ModuleList(
                 [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
                 *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
             ))
+            self.fmss.append(FMS(n_channels, n_channels))
         self.stacked_tcnblocks = nn.ModuleList(self.stacked_tcnblocks)
+        self.fmss = nn.ModuleList(self.fmss)
 
         self.mask1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)
         self.relu = nn.ReLU()
@@ -82,8 +50,15 @@ class SpeakerExtractorShort(nn.Module):
     def forward(self, x, ref):
         y = self.ln1(x.transpose(1, 2)).transpose(1, 2)
         y = self.conv1(y)
+        res = None
         for i in range(len(self.stacked_tcnblocks)):
             y = self.apply_stacked_tcnblocks(y, ref, self.stacked_tcnblocks[i])
+            y = self.fmss[i](y)
+            if i == 0:
+                res = y
+            else:
+                res = res + y
+        y = res
         mask1 = self.relu(self.mask1(y))
         encs1 = x * mask1
         return encs1
@@ -97,20 +72,7 @@ class SpeakerExtractorShort(nn.Module):
         return y
 
 
-class SpeechDecoderShort(nn.Module):
-    def __init__(self, n_channels, short_kernel):
-        super().__init__()
-        self.n_channels = n_channels 
-        self.short_kernel = short_kernel
-
-        self.decoder_short = nn.ConvTranspose1d(n_channels, 1, short_kernel, stride=short_kernel//2)
-
-    def forward(self, encs1, init_len):
-        s1 = self.decoder_short(encs1)[:, 0, :init_len]
-        return s1
-
-
-class SpexPlusShort(nn.Module):
+class SpexPlusShortMod(nn.Module):
     def __init__(self, 
                  n_channels, 
                  hidden_channels,
@@ -126,7 +88,7 @@ class SpexPlusShort(nn.Module):
 
         self.speech_encoder = SpeechEncoderShort(n_channels, short_kernel)
         self.speaker_encoder = SpeakerEncoderShort(n_channels, out_channels, n_resnetblocks, n_speakers)
-        self.speaker_extractor = SpeakerExtractorShort(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal)
+        self.speaker_extractor = SpeakerExtractorShortMod(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal)
         self.speech_decoder = SpeechDecoderShort(n_channels, short_kernel)
 
     def forward(self, x, ref):

@@ -39,12 +39,17 @@ class TCNBlock(nn.Module):
                  n_channels, 
                  hidden_channels,
                  dilation, 
-                 causal=False):
+                 causal=False,
+                 out_channels=None):
         super().__init__()
         self.n_channels = n_channels
         self.hidden_channels = hidden_channels
         self.dilation = dilation
         self.causal = causal
+        self.out_channels = out_channels
+        if out_channels is None:
+            self.out_channels = n_channels
+            out_channels = n_channels
 
         self.conv1 = nn.Conv1d(n_channels, hidden_channels, kernel_size=1)
         self.prelu1 = nn.PReLU()
@@ -61,7 +66,9 @@ class TCNBlock(nn.Module):
         )
         self.prelu2 = nn.PReLU()
         self.gln2 = GlobalLayerNorm(hidden_channels) if not causal else ChannelLayerNorm(hidden_channels)
-        self.conv2 = nn.Conv1d(hidden_channels, n_channels, kernel_size=1)
+        self.conv2 = nn.Conv1d(hidden_channels, out_channels, kernel_size=1)
+        if out_channels != n_channels:
+            self.downsample = nn.Conv1d(n_channels, out_channels, kernel_size=1)
 
     def forward(self, x):
         y = self.gln1(self.prelu1(self.conv1(x)))
@@ -70,7 +77,11 @@ class TCNBlock(nn.Module):
         else:
             y = nn.functional.pad(y, (self.dilation * 2, 0)) 
         y = self.gln2(self.prelu2(self.deconv(y)))
-        y = self.conv2(y) + x
+        y = self.conv2(y)
+        if self.n_channels == self.out_channels:
+            y = y + x
+        else:
+            y = y + self.downsample(x)
         return y
 
 
@@ -80,13 +91,18 @@ class TCNBlockRef(nn.Module):
                  hidden_channels,
                  dilation, 
                  ref_dim, 
-                 causal=False):
+                 causal=False, 
+                 out_channels=None):
         super().__init__()
         self.n_channels = n_channels
         self.hidden_channels = hidden_channels
         self.dilation = dilation
         self.ref_dim = ref_dim
         self.causal = causal
+        self.out_channels = out_channels
+        if out_channels is None:
+            self.out_channels = n_channels
+            out_channels = n_channels
 
         self.conv1 = nn.Conv1d(n_channels + ref_dim, hidden_channels, kernel_size=1)
         self.prelu1 = nn.PReLU()
@@ -103,7 +119,9 @@ class TCNBlockRef(nn.Module):
         )
         self.prelu2 = nn.PReLU()
         self.gln2 = GlobalLayerNorm(hidden_channels) if not causal else ChannelLayerNorm(hidden_channels)
-        self.conv2 = nn.Conv1d(hidden_channels, n_channels, kernel_size=1)
+        self.conv2 = nn.Conv1d(hidden_channels, out_channels, kernel_size=1)
+        if out_channels != n_channels:
+            self.downsample = nn.Conv1d(n_channels, out_channels, kernel_size=1)
 
     def forward(self, x, ref):
         ref = ref.unsqueeze(-1).repeat(1, 1, x.shape[-1])
@@ -114,7 +132,11 @@ class TCNBlockRef(nn.Module):
         else:
             y = nn.functional.pad(y, (self.dilation * 2, 0)) 
         y = self.gln2(self.prelu2(self.deconv(y)))
-        y = self.conv2(y) + x
+        y = self.conv2(y)
+        if self.n_channels == self.out_channels:
+            y = y + x
+        else:
+            y = y + self.downsample(x)
         return y
 
 
@@ -123,11 +145,13 @@ class TCNBlockRNN(TCNBlock):
                  n_channels,
                  hidden_channels,
                  dilation,
-                 causal=False):
+                 causal=False,
+                 out_channels=None):
         super().__init__(n_channels,
                          hidden_channels,
                          dilation,
-                         causal)
+                         causal, 
+                         out_channels)
 
     def forward(self, x, memory):
         memory = memory.unsqueeze(-1).repeat(1, 1, x.shape[-1])
@@ -137,7 +161,11 @@ class TCNBlockRNN(TCNBlock):
         else:
             y = nn.functional.pad(y, (self.dilation * 2, 0))
         y = self.gln2(self.prelu2(self.deconv(y)))
-        y = self.conv2(y) + x
+        y = self.conv2(y)
+        if self.n_channels == self.out_channels:
+            y = y + x
+        else:
+            y = y + self.downsample(x)
         return y
 
 
@@ -147,12 +175,14 @@ class TCNBlockRefRNN(TCNBlockRef):
                  hidden_channels,
                  dilation,
                  ref_dim,
-                 causal=False):
+                 causal=False, 
+                 out_channels=None):
         super().__init__(n_channels,
                          hidden_channels,
                          dilation,
                          ref_dim,
-                         causal)
+                         causal, 
+                         out_channels)
 
     def forward(self, x, ref, memory):
         ref = ref.unsqueeze(-1).repeat(1, 1, x.shape[-1])
@@ -164,53 +194,9 @@ class TCNBlockRefRNN(TCNBlockRef):
         else:
             y = nn.functional.pad(y, (self.dilation * 2, 0))
         y = self.gln2(self.prelu2(self.deconv(y)))
-        y = self.conv2(y) + x
-        return y
-    
-
-class TCNBlockRefReduceChannels(nn.Module):
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 hidden_channels,
-                 dilation,
-                 ref_dim,
-                 causal=False):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.hidden_channels = hidden_channels
-        self.dilation = dilation
-        self.ref_dim = ref_dim
-        self.causal = causal
-
-        self.conv1 = nn.Conv1d(in_channels + ref_dim, hidden_channels, kernel_size=1)
-        self.prelu1 = nn.PReLU()
-        self.gln1 = GlobalLayerNorm(hidden_channels) if not causal else ChannelLayerNorm(hidden_channels)
-        self.deconv = nn.Sequential(
-            nn.Conv1d(hidden_channels,
-                      hidden_channels,
-                      kernel_size=3,
-                      dilation=dilation,
-                      groups=hidden_channels),
-            nn.Conv1d(hidden_channels,
-                      hidden_channels,
-                      kernel_size=1)
-        )
-        self.prelu2 = nn.PReLU()
-        self.gln2 = GlobalLayerNorm(hidden_channels) if not causal else ChannelLayerNorm(hidden_channels)
-        self.conv2 = nn.Conv1d(hidden_channels, out_channels, kernel_size=1)
-
-    def forward(self, x, ref):
-        ref = ref.unsqueeze(-1).repeat(1, 1, x.shape[-1])
-        y = torch.cat([x, ref], 1)
-        y = self.gln1(self.prelu1(self.conv1(y)))
-        if not self.causal:
-            y = nn.functional.pad(y, (self.dilation, self.dilation))
+        y = self.conv2(y)
+        if self.n_channels == self.out_channels:
+            y = y + x
         else:
-            y = nn.functional.pad(y, (self.dilation * 2, 0))
-        y = self.gln2(self.prelu2(self.deconv(y)))
-        y = self.conv2(y) + x[:, : self.out_channels, :]
+            y = y + self.downsample(x)
         return y
-    
-    

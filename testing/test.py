@@ -78,7 +78,7 @@ def run_testing(rank, world_size, config):
 
     setup(rank, world_size)
     
-    dataloader = get_dataloader(**config["dataset"]["test"])
+    dataloader, _ = get_dataloader(**config["dataset"]["test"])
 
     model = init_obj(config["arch"], module_arch, n_speakers=config["n_speakers"])
     model.to(device)

@@ -79,7 +79,7 @@ def run_testing(rank, world_size, config):
 
     setup(rank, world_size)
     
-    dataloader = get_dataloader(**config["dataset"]["test"])
+    dataloader, _ = get_dataloader(**config["dataset"]["test"])
 
     streamer = Streamer(**config["streamer"])
 

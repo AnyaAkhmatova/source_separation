@@ -61,8 +61,10 @@ class SpeakerEncoder(nn.Module):
             y = block(y)
         y = self.conv2(y)
         ref_vec = y.mean(2)
-        y = self.linear(ref_vec)
-        return ref_vec, y
+        if self.training:
+            y = self.linear(ref_vec)
+            return ref_vec, y
+        return ref_vec
 
 
 class SpeakerExtractor(nn.Module):
@@ -157,11 +159,15 @@ class SpexPlus(nn.Module):
         mix_encs, mix_init_len = self.speech_encoder(x)
 
         ref_encs, _ = self.speech_encoder(ref)
-        ref_vec, speaker_logits = self.speaker_encoder(ref_encs)
+        if self.training:
+            ref_vec, speaker_logits = self.speaker_encoder(ref_encs)
+        else:
+            ref_vec = self.speaker_encoder(ref_encs)
 
-        # if self.causal:
         ref_vec = ref_vec.repeat(x.shape[0] // ref_vec.shape[0], 1)
 
         encs1, encs2, encs3 = self.speaker_extractor(mix_encs, ref_vec)
         s1, s2, s3 = self.speech_decoder(encs1, encs2, encs3, mix_init_len)
-        return s1, s2, s3, speaker_logits
+        if self.training:
+            return s1, s2, s3, speaker_logits
+        return s1, s2, s3

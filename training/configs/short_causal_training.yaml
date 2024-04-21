@@ -1,19 +1,19 @@
-name: "causal_spexplusshort"
+name: "spexplusshort"
 wandb_project: "online_target_source_separation"
 n_gpu: 2
 dataset:
   sr: 16000
   train:
-    root: "../../data/ss_data/"
+    root: "../../data/ss_data_new/"
     part: "train"
-    batch_size: 16
+    batch_size: 8
     max_length: 20000
     num_workers: 8
     pin_memory: True
   dev:
-    root: "../../data/ss_data/"
+    root: "../../data/ss_data_new/"
     part: "dev"
-    batch_size: 1
+    batch_size: 8
     max_length: 5000
     num_workers: 8
     pin_memory: True
@@ -30,8 +30,8 @@ arch:
     short_kernel: 40
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
-    n_tcnblocks: 8
-    causal: True
+    n_tcnblocks: 5
+    causal: False
 optimizer:
   type: "Adam"
   args:

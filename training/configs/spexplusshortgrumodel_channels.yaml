@@ -1,10 +1,10 @@
-name: "spexplusshortrnn_small"
+name: "spexplusshortgrumodel_channels"
 wandb_project: "online_target_source_separation"
 n_gpu: 2
 dataset:
   sr: 16000
   train:
-    root: "../../data/ss_data_360/"
+    root: "../../data/ss_data_360_many_speakers/"
     part: "train"
     batch_size: 8
     max_length: 20000
@@ -22,7 +22,7 @@ streamer:
   chunk_step: 2400
   overlap_add_method: "half"
 arch:
-  type: "SpexPlusShortRNN"
+  type: "SpexPlusShortGRUModel"
   args: 
     n_channels: 256
     hidden_channels: 512
@@ -31,12 +31,13 @@ arch:
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 5
+    dimension: "channels"
     causal: False
 optimizer:
-  type: "Adam"
+  type: "AdamW"
   args:
-    lr: 0.001
-    weight_decay: 0
+    lr: 0.0001
+    weight_decay: 0.0001
 loss:
   type: "SpexPlusShortLoss"
   args: {}
@@ -58,4 +59,4 @@ trainer:
   save_period: 10
   monitor: "min dev_loss"
   early_stop: 6
-  grad_norm_clip: 4000
+  grad_norm_clip: 40

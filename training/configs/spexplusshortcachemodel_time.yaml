@@ -1,19 +1,19 @@
-name: "spexplusshort_causal"
+name: "spexplusshortcachemodel_time"
 wandb_project: "online_target_source_separation"
 n_gpu: 2
 dataset:
   sr: 16000
   train:
-    root: "../../data/ss_data/"
+    root: "../../data/ss_data_360_many_speakers/"
     part: "train"
     batch_size: 8
     max_length: 20000
     num_workers: 8
     pin_memory: True
   dev:
-    root: "../../data/ss_data/"
+    root: "../../data/ss_data_new/"
     part: "dev"
-    batch_size: 1
+    batch_size: 8
     max_length: 5000
     num_workers: 8
     pin_memory: True
@@ -22,21 +22,24 @@ streamer:
   chunk_step: 2400
   overlap_add_method: "half"
 arch:
-  type: "SpexPlusShort"
+  type: "SpexPlusShortCacheModel"
   args: 
-    n_channels: 256
-    hidden_channels: 512
+    n_channels: 192
+    hidden_channels: 384
     out_channels: 100
     short_kernel: 40
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 8
+    cache_type: "time"
+    streamer_type: "half"
     causal: False
+    memory_size: 32
 optimizer:
-  type: "Adam"
+  type: "AdamW"
   args:
-    lr: 0.001
-    weight_decay: 0
+    lr: 0.0001
+    weight_decay: 0.0001
 loss:
   type: "SpexPlusShortLoss"
   args: {}

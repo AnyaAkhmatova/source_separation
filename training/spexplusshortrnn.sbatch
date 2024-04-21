@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name="SpexPlusShortRNN-train"
 #SBATCH --output="spexplusshortrnn-train.out"
-#SBATCH --time=6:0:0
+#SBATCH --time=20:0:0
 #SBATCH --nodes=1
 #SBATCH --gpus=2
 #SBATCH --cpus-per-task=2

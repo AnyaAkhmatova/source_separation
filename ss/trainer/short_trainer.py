@@ -65,7 +65,7 @@ class ShortCausalTrainer(BaseTrainer):
         )
 
         self.mode = "train"
-        self.scaler = torch.cuda.amp.GradScaler()
+        # self.scaler = torch.cuda.amp.GradScaler()
 
     def _train_epoch(self, epoch):
         self.mode = "train"
@@ -182,27 +182,29 @@ class ShortCausalTrainer(BaseTrainer):
             if batch_idx % self.grad_accum_step == 0:
                 self.optimizer.zero_grad(set_to_none=True)
 
-            with torch.cuda.amp.autocast():
-                batch["s1"], batch["logits"] = self.model(batch["mix_chunks"], batch["ref"])
-                length = batch["target"].shape[-1]
-                batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
-                batch["s1"] = batch["s1"][:, :length]
-                
-                batch["loss"], batch["sisdr"] = self.criterion(**batch, is_train=is_train)
+            # with torch.cuda.amp.autocast():
+            batch["s1"], batch["logits"] = self.model(batch["mix_chunks"], batch["ref"])
+            length = batch["target"].shape[-1]
+            batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
+            batch["s1"] = batch["s1"][:, :length]
+            
+            batch["loss"], batch["sisdr"] = self.criterion(**batch, is_train=is_train)
 
-            self.scaler.scale(batch["loss"] / self.grad_accum_step).backward()
+            # self.scaler.scale(batch["loss"] / self.grad_accum_step).backward()
+            (batch["loss"] / self.grad_accum_step).backward()
 
             if (batch_idx + 1) % self.grad_accum_step == 0:
-                self.scaler.unscale_(self.optimizer)
+                # self.scaler.unscale_(self.optimizer)
                 self._clip_grad_norm()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
+                self.optimizer.step()
+                # self.scaler.step(self.optimizer)
+                # self.scaler.update()
 
         else:
             batch["mix_chunks"], n_chunks = self.streamer.make_chunks(batch["mix"])
             batch = self.move_batch_to_device(batch, self.device, is_train)
             
-            batch["s1"], batch["logits"] = self.model(batch["mix_chunks"], batch["ref"])
+            batch["s1"] = self.model(batch["mix_chunks"], batch["ref"])
             length = batch["target"].shape[-1]
             batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
             batch["s1"] = batch["s1"][:, :length]

@@ -1,6 +1,6 @@
-name: "spexplusshortrnn_test"
+name: "spexplusshortrnn_small_test"
 wandb_project: "online_target_source_separation"
-resume: "../training/outputs/2024-04-17/03-03-28/model_best.pth"
+resume: "../training/outputs/2024-04-18/00-09-09/model_best.pth"
 n_gpu: 1
 sr: 16000
 n_speakers: 100
@@ -27,11 +27,9 @@ arch:
     short_kernel: 40
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
-    n_tcnblocks: 8
+    n_tcnblocks: 5
     causal: False
 loss:
   type: "SpexPlusShortLoss"
   args: {}
-metrics:
-  - type: "PESQ"
-    args: {}
+metrics: []

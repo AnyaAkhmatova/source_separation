@@ -6,7 +6,7 @@ import random
 
 from concurrent.futures import ProcessPoolExecutor
 
-from .util import *
+from .new_util import *
 
 
 class LibriSpeechSpeakerFiles:

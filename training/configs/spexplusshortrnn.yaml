@@ -1,19 +1,17 @@
-name: "spexplusshortrnn_cont"
+name: "spexplusshortrnn"
 wandb_project: "online_target_source_separation"
 n_gpu: 2
-resume: "./outputs/2024-04-17/03-03-28/model_best.pth"
-continue_from_checkpoint: True
 dataset:
   sr: 16000
   train:
-    root: "../../data/ss_data/"
+    root: "../../data/ss_data_360_many_speakers/"
     part: "train"
     batch_size: 8
     max_length: 20000
     num_workers: 8
     pin_memory: True
   dev:
-    root: "../../data/ss_data/"
+    root: "../../data/ss_data_new/"
     part: "dev"
     batch_size: 8
     max_length: 5000
@@ -32,13 +30,13 @@ arch:
     short_kernel: 40
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
-    n_tcnblocks: 8
+    n_tcnblocks: 5
     causal: False
 optimizer:
-  type: "Adam"
+  type: "AdamW"
   args:
-    lr: 0.001
-    weight_decay: 0
+    lr: 0.0001
+    weight_decay: 0.0001
 loss:
   type: "SpexPlusShortLoss"
   args: {}

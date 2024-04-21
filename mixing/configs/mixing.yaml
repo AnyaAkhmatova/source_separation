@@ -2,7 +2,7 @@ audios_dir: "../../data/LibriSpeech/"
 audio_template: "*.flac"
 random_state: 42
 mix_generation_args:
-  snr_levels: [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
+  snr_levels: [0]
   num_workers: 10
   update_steps: 10
   sr: 16000
@@ -11,21 +11,11 @@ mix_generation_args:
   audio_len: 3
   ref_max_len: 10
 train:
-  part: "train-clean-100"
-  out_folder: "../../data/ss_data/train/"
-  max_n_speakers: 101
+  part: "train-clean-360"
+  out_folder: "../../data/ss_data_360_many_speakers/train/"
+  max_n_speakers: 1000
   nfiles: 7000
   test: False
-dev: 
-  part: "dev-clean"
-  out_folder: "../../data/ss_data/dev/"
-  nfiles: 4000
-  test: False
-test: 
-  part: "test-clean"
-  out_folder: "../../data/ss_data/test/"
-  nfiles: 3500
-  test: True
 
 
 

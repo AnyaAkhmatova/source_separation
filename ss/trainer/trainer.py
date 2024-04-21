@@ -189,8 +189,8 @@ class Trainer(BaseTrainer):
                 self.scaler.update()
         else:
             batch = self.move_batch_to_device(batch, self.device, is_train)
-            s1, s2, s3, logits = self.model(batch["mix"], batch["ref"])
-            batch["s1"], batch["s2"], batch["s3"], batch["logits"] = s1, s2, s3, logits
+            s1, s2, s3 = self.model(batch["mix"], batch["ref"])
+            batch["s1"], batch["s2"], batch["s3"] = s1, s2, s3
             batch["loss"], batch["sisdr"] = self.criterion(**batch, is_train=is_train)
         
         metrics.update("loss", batch["loss"].item())
@@ -443,7 +443,7 @@ class CausalTrainer(BaseTrainer):
             batch["mix_chunks"], n_chunks = self.streamer.make_chunks(batch["mix"])
             batch = self.move_batch_to_device(batch, self.device, is_train)
             
-            batch["s1"], batch["s2"], batch["s3"], batch["logits"] = self.model(batch["mix_chunks"], batch["ref"])
+            batch["s1"], batch["s2"], batch["s3"] = self.model(batch["mix_chunks"], batch["ref"])
             length = batch["target"].shape[-1]
             batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
             batch["s1"] = batch["s1"][:, :length]

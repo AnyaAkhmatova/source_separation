@@ -79,7 +79,7 @@ def run_testing(rank, world_size, config):
 
     setup(rank, world_size)
     
-    dataloader = get_dataloader(**config["dataset"]["test"])
+    dataloader, _ = get_dataloader(**config["dataset"]["test"])
 
     streamer = Streamer(**config["streamer"])
 
@@ -108,7 +108,7 @@ def run_testing(rank, world_size, config):
         for metric_dict in config["metrics"]
     ]
     metrics = {met.name: met for met in metrics}
-    metric_tracker = MetricTracker("loss", "SISDR", *sorted(list(metrics.keys())), device=device)
+    metric_tracker = MetricTracker("loss", "SI-SDR", *sorted(list(metrics.keys())), device=device)
     
     log_step = config["log_step"]
     sr = config["sr"]
@@ -127,10 +127,10 @@ def run_testing(rank, world_size, config):
             batch["s1"] = streamer.apply_overlap_add_method(batch["s1"], n_chunks)
             batch["s1"] = batch["s1"][:, :length]
             
-            batch["loss"], batch["sisdr"] = criterion(**batch, is_train=False)
+            batch["loss"], batch["si-sdr"] = criterion(**batch, is_train=False)
 
             metric_tracker.update("loss", batch["loss"].item())
-            metric_tracker.update("SISDR", batch["sisdr"].item())
+            metric_tracker.update("SI-SDR", batch["si-sdr"].item())
 
             for met in metrics.keys():
                 metric_tracker.update(met, metrics[met](**batch).item())
@@ -146,9 +146,9 @@ def run_testing(rank, world_size, config):
     
     wandb.log({"test_results": wandb.Table(dataframe=df)})
 
-    df_vals = pd.DataFrame(columns=["loss", "SISDR", *sorted(list(metrics.keys()))])
+    df_vals = pd.DataFrame(columns=["loss", "SI-SDR", *sorted(list(metrics.keys()))])
     vals = []
-    for metric_name in ["loss", "SISDR", *sorted(list(metrics.keys()))]:
+    for metric_name in ["loss", "SI-SDR", *sorted(list(metrics.keys()))]:
         metric_value = metric_tracker.avg(metric_name)
         logger.info("{}: {:.6f}".format(metric_name, metric_value))
         vals.append(metric_value)
