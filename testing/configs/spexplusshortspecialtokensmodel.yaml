@@ -1,9 +1,9 @@
-name: "spexplusshortrnn_old_test"
+name: "spexplusshortspecialtokensmodel_test"
 wandb_project: "online_target_source_separation"
-resume: "../training/outputs/2024-04-17/03-03-28/model_best.pth"
+resume: "../training/outputs/2024-04-21/12-32-02/model_best.pth"
 n_gpu: 1
 sr: 16000
-n_speakers: 100
+n_speakers: 921
 log_step: 500
 dataset:
   sr: 16000
@@ -19,7 +19,7 @@ streamer:
   chunk_step: 2400
   overlap_add_method: "half"
 arch:
-  type: "SpexPlusShortRNN"
+  type: "SpexPlusShortSpecialTokensModel"
   args: 
     n_channels: 256
     hidden_channels: 512
@@ -27,7 +27,8 @@ arch:
     short_kernel: 40
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
-    n_tcnblocks: 8
+    n_tcnblocks: 5
+    n_tokens: 20
     causal: False
 loss:
   type: "SpexPlusShortLoss"

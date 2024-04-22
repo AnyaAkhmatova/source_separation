@@ -122,7 +122,7 @@ def run_testing(rank, world_size, config):
             for tensor_for_gpu in ["mix_chunks", "ref", "target", "lens"]:
                 batch[tensor_for_gpu] = batch[tensor_for_gpu].to(device)
             
-            batch["s1"], batch["logits"] = model(batch["mix_chunks"], batch["ref"])
+            batch["s1"] = model(batch["mix_chunks"], batch["ref"])
             length = batch["target"].shape[-1]
             batch["s1"] = streamer.apply_overlap_add_method(batch["s1"], n_chunks)
             batch["s1"] = batch["s1"][:, :length]
