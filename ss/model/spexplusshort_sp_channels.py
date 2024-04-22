@@ -7,9 +7,9 @@ from .tcn_block import TCNBlockRef, TCNBlock
 from .spexplusshort import SpeechEncoderShort, SpeakerEncoderShort, SpeechDecoderShort
 
 
-class SpeakerExtractorShortSpecialTokens(nn.Module):
+class SpeakerExtractorShortSpecialChannels(nn.Module):
     def __init__(self, n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, 
-                 n_tokens=None, causal=False):
+                 n_sp_channels=None, causal=False):
         super().__init__()
         self.n_channels = n_channels
         self.hidden_channels = hidden_channels
@@ -17,9 +17,9 @@ class SpeakerExtractorShortSpecialTokens(nn.Module):
         self.n_stacked_tcnblocks = n_stacked_tcnblocks
         self.n_tcnblocks = n_tcnblocks
 
-        self.n_tokens = n_tokens
-        if self.n_tokens == None:
-            self.n_tokens = 2**n_tcnblocks
+        self.n_sp_channels = n_sp_channels
+        if self.n_sp_channels is None:
+            self.n_sp_channels = 2**n_tcnblocks
         self.causal = causal
 
         self.ln1 = nn.LayerNorm(n_channels)
@@ -29,8 +29,8 @@ class SpeakerExtractorShortSpecialTokens(nn.Module):
         for _ in range(n_stacked_tcnblocks):
             self.stacked_tcnblocks.append(
                 nn.ModuleList(
-                    [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
-                     *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    [TCNBlockRef(n_channels + self.n_sp_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                     *[TCNBlock(n_channels + self.n_sp_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
                 )
             )
         self.stacked_tcnblocks = nn.ModuleList(self.stacked_tcnblocks)
@@ -38,22 +38,22 @@ class SpeakerExtractorShortSpecialTokens(nn.Module):
         self.mask1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)
         self.relu = nn.ReLU()
 
-    def forward(self, x, ref, tokens=None):
-        if tokens is None:
-            tokens = torch.zeros((x.shape[0], x.shape[-2], self.n_tokens), dtype=x.dtype, device=x.device)
+    def forward(self, x, ref, memory=None):
+        if memory is None:
+            memory = torch.zeros((x.shape[0], self.n_sp_channels, x.shape[-1]), dtype=x.dtype, device=x.device)
 
         y = self.ln1(x.transpose(1, 2)).transpose(1, 2)
         y = self.conv1(y)
 
-        y = torch.cat([tokens, y, tokens], dim=-1)
+        y = torch.cat([y, memory], dim=-2)
         for i in range(len(self.stacked_tcnblocks)):
             y = self.apply_stacked_tcn_blocks(self.stacked_tcnblocks[i], y, ref)
-        new_tokens = y[:, :, y.shape[-1] - self.n_tokens:]
-        y = y[:, :, self.n_tokens: y.shape[-1] - self.n_tokens]
+        new_memory = y[:, y.shape[-2] - self.n_sp_channels:, :]
+        y = y[:, : y.shape[-2] - self.n_sp_channels, :]
 
         mask1 = self.relu(self.mask1(y))
         encs1 = x * mask1
-        return encs1, new_tokens
+        return encs1, new_memory
 
     def apply_stacked_tcn_blocks(self, stacked_tcn_blocks, x, ref):
         y = stacked_tcn_blocks[0](x, ref)
@@ -62,7 +62,7 @@ class SpeakerExtractorShortSpecialTokens(nn.Module):
         return y
 
 
-class SpexPlusShortSpecialTokensModel(nn.Module):
+class SpexPlusShortSpecialChannelsModel(nn.Module):
     def __init__(self,
                  n_channels,
                  hidden_channels,
@@ -72,24 +72,24 @@ class SpexPlusShortSpecialTokensModel(nn.Module):
                  n_speakers,
                  n_stacked_tcnblocks,
                  n_tcnblocks,
-                 n_tokens=None,
+                 n_sp_channels=None,
                  causal=False):
         super().__init__()
         self.causal = causal
 
         self.speech_encoder = SpeechEncoderShort(n_channels, short_kernel)
         self.speaker_encoder = SpeakerEncoderShort(n_channels, out_channels, n_resnetblocks, n_speakers)
-        self.speaker_extractor = SpeakerExtractorShortSpecialTokens(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, 
-                                                                    n_tokens, causal)
+        self.speaker_extractor = SpeakerExtractorShortSpecialChannels(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, 
+                                                                      n_sp_channels, causal)
         self.speech_decoder = SpeechDecoderShort(n_channels, short_kernel)
 
-    def forward_chunk(self, x, ref_vec, tokens):
+    def forward_chunk(self, x, ref_vec, memory):
         mix_encs, mix_init_len = self.speech_encoder(x)
-        encs1, new_tokens = self.speaker_extractor(mix_encs, ref_vec, tokens)
+        encs1, new_memory = self.speaker_extractor(mix_encs, ref_vec, memory)
         s1 = self.speech_decoder(encs1, mix_init_len)
-        return s1, new_tokens
+        return s1, new_memory
 
-    def forward(self, x, ref=None, ref_vec=None, tokens=None, one_chunk=False):
+    def forward(self, x, ref=None, have_relevant_speakers=True, ref_vec=None, memory=None, one_chunk=False):
         # training: work with all chunks inside model.forward in oreder to
         # use ddp backward, otherwise inplace modification error (because of reference processing)
         # validating/testing: work with all chunks inside model.forward as
@@ -100,32 +100,34 @@ class SpexPlusShortSpecialTokensModel(nn.Module):
             batch_size = ref.shape[0]
             n_chunks = x.shape[0] // ref.shape[0]
             ref_encs, _ = self.speech_encoder(ref)
-            if self.training:
-                ref_vec, speaker_logits = self.speaker_encoder(ref_encs)
+            results = self.speaker_encoder(ref_encs, have_relevant_speakers)
+            if have_relevant_speakers:
+                ref_vec, speaker_logits = results
             else:
-                ref_vec = self.speaker_encoder(ref_encs)
+                ref_vec = results
             results = []
-            tokens = None
+            memory = None
             for i in range(n_chunks):
                 chunk = x[i * batch_size: (i + 1) * batch_size, :]
-                res, tokens = self.forward_chunk(chunk, ref_vec, tokens)
+                res, memory = self.forward_chunk(chunk, ref_vec, memory)
                 results.append(res)
             s1 = torch.cat(results, dim=0)
-            if self.training:
+            if have_relevant_speakers:
                 return s1, speaker_logits
             return s1
         # inference
         if ref_vec is None: # have x and ref
             ref_encs, _ = self.speech_encoder(ref)
-            if self.training:
-                ref_vec, speaker_logits = self.speaker_encoder(ref_encs)
+            results = self.speaker_encoder(ref_encs, have_relevant_speakers)
+            if have_relevant_speakers:
+                ref_vec, speaker_logits = results
             else:
-                ref_vec = self.speaker_encoder(ref_encs)
-            s1, new_tokens = self.forward_chunk(x, ref_vec, None)
-            if self.training:
-                return s1, new_tokens, ref_vec, speaker_logits
-            return s1, new_tokens, ref_vec
+                ref_vec = results
+            s1, new_memory = self.forward_chunk(x, ref_vec, None)
+            if have_relevant_speakers:
+                return s1, new_memory, ref_vec, speaker_logits
+            return s1, new_memory, ref_vec
         # have x, ref_vec and tokens
-        s1, new_tokens = self.forward_chunk(x, ref_vec, tokens)
-        return s1, new_tokens
+        s1, new_memory = self.forward_chunk(x, ref_vec, memory)
+        return s1, new_memory
     

@@ -42,14 +42,14 @@ class SpeakerEncoderShort(nn.Module):
         self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=1)
         self.linear = nn.Linear(out_channels, n_speakers)
 
-    def forward(self, x):
+    def forward(self, x, have_relevant_speakers):
         y = self.ln1(x.transpose(1, 2)).transpose(1, 2)
         y = self.conv1(y)
         for block in self.resnetblocks:
             y = block(y)
         y = self.conv2(y)
         ref_vec = y.mean(2)
-        if self.training:
+        if have_relevant_speakers:
             y = self.linear(ref_vec)
             return ref_vec, y
         return ref_vec
@@ -129,19 +129,20 @@ class SpexPlusShort(nn.Module):
         self.speaker_extractor = SpeakerExtractorShort(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal)
         self.speech_decoder = SpeechDecoderShort(n_channels, short_kernel)
 
-    def forward(self, x, ref):
+    def forward(self, x, ref, have_relevant_speakers):
         mix_encs, mix_init_len = self.speech_encoder(x)
 
         ref_encs, _ = self.speech_encoder(ref)
-        if self.training:
-            ref_vec, speaker_logits = self.speaker_encoder(ref_encs)
+        results = self.speaker_encoder(ref_encs, have_relevant_speakers)
+        if have_relevant_speakers:
+            ref_vec, speaker_logits = results
         else:
-            ref_vec = self.speaker_encoder(ref_encs)
+            ref_vec = results
 
         ref_vec = ref_vec.repeat(x.shape[0] // ref_vec.shape[0], 1)
 
         encs1 = self.speaker_extractor(mix_encs, ref_vec)
         s1 = self.speech_decoder(encs1, mix_init_len)
-        if self.training:
+        if have_relevant_speakers:
             return s1, speaker_logits
         return s1

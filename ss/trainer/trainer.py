@@ -157,10 +157,10 @@ class Trainer(BaseTrainer):
         return self.evaluation_metrics.result()
     
     @staticmethod
-    def move_batch_to_device(batch, device, is_train):
+    def move_batch_to_device(batch, device, have_relevant_speakers):
         for tensor_for_gpu in ["mix", "ref", "target", "lens"]:
             batch[tensor_for_gpu] = batch[tensor_for_gpu].to(device, non_blocking=True)
-        if is_train:
+        if have_relevant_speakers:
             batch["target_id"] = batch["target_id"].to(device, non_blocking=True)
         return batch
     
@@ -174,13 +174,17 @@ class Trainer(BaseTrainer):
         is_train = (self.mode == "train")
 
         if is_train:
-            batch = self.move_batch_to_device(batch, self.device, is_train)
+            have_relevant_speakers = torch.any(batch["target_id"] != -100).item()
+            batch = self.move_batch_to_device(batch, self.device, have_relevant_speakers)
             if batch_idx % self.grad_accum_step == 0:
                 self.optimizer.zero_grad(set_to_none=True)
-            with torch.cuda.amp.autocast():
-                s1, s2, s3, logits = self.model(batch["mix"], batch["ref"])
-                batch["s1"], batch["s2"], batch["s3"], batch["logits"] = s1, s2, s3, logits
-                batch["loss"], batch["sisdr"] = self.criterion(**batch, is_train=is_train)
+            with torch.cuda.amp.autocast(): 
+                results = self.model(batch["mix"], batch["ref"], have_relevant_speakers)
+                if have_relevant_speakers:
+                    batch["s1"], batch["s2"], batch["s3"], batch["logits"] = results
+                else:
+                    batch["s1"], batch["s2"], batch["s3"] = results
+                batch["loss"], batch["sisdr"] = self.criterion(**batch, have_relevant_speakers=have_relevant_speakers)
             self.scaler.scale(batch["loss"] / self.grad_accum_step).backward()
             if (batch_idx + 1) % self.grad_accum_step == 0:
                 self.scaler.unscale_(self.optimizer)
@@ -188,10 +192,9 @@ class Trainer(BaseTrainer):
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
         else:
-            batch = self.move_batch_to_device(batch, self.device, is_train)
-            s1, s2, s3 = self.model(batch["mix"], batch["ref"])
-            batch["s1"], batch["s2"], batch["s3"] = s1, s2, s3
-            batch["loss"], batch["sisdr"] = self.criterion(**batch, is_train=is_train)
+            batch = self.move_batch_to_device(batch, self.device, False)
+            batch["s1"], batch["s2"], batch["s3"] = self.model(batch["mix"], batch["ref"], False)
+            batch["loss"], batch["sisdr"] = self.criterion(**batch, have_relevant_speakers=False)
         
         metrics.update("loss", batch["loss"].item())
         metrics.update("SISDR", batch["sisdr"].item())
@@ -396,10 +399,10 @@ class CausalTrainer(BaseTrainer):
         return self.evaluation_metrics.result()
     
     @staticmethod
-    def move_batch_to_device(batch, device, is_train):
+    def move_batch_to_device(batch, device, have_relevant_speakers):
         for tensor_for_gpu in ["mix_chunks", "ref", "target", "lens"]:
             batch[tensor_for_gpu] = batch[tensor_for_gpu].to(device, non_blocking=True)
-        if is_train:
+        if have_relevant_speakers:
             batch["target_id"] = batch["target_id"].to(device, non_blocking=True)
         return batch
     
@@ -414,13 +417,18 @@ class CausalTrainer(BaseTrainer):
 
         if is_train:
             batch["mix_chunks"], n_chunks = self.streamer.make_chunks(batch["mix"])
-            batch = self.move_batch_to_device(batch, self.device, is_train)
+            have_relevant_speakers = torch.any(batch["target_id"] != -100).item()
+            batch = self.move_batch_to_device(batch, self.device, have_relevant_speakers)
 
             if batch_idx % self.grad_accum_step == 0:
                 self.optimizer.zero_grad(set_to_none=True)
 
             with torch.cuda.amp.autocast():
-                batch["s1"], batch["s2"], batch["s3"], batch["logits"] = self.model(batch["mix_chunks"], batch["ref"])
+                results = self.model(batch["mix_chunks"], batch["ref"], have_relevant_speakers)
+                if have_relevant_speakers:
+                    batch["s1"], batch["s2"], batch["s3"], batch["logits"] = results
+                else:
+                    batch["s1"], batch["s2"], batch["s3"] = results
                 length = batch["target"].shape[-1]
                 batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
                 batch["s1"] = batch["s1"][:, :length]
@@ -429,7 +437,7 @@ class CausalTrainer(BaseTrainer):
                 batch["s3"] = self.streamer.apply_overlap_add_method(batch["s3"], n_chunks)
                 batch["s3"] = batch["s3"][:, :length]
                 
-                batch["loss"], batch["sisdr"] = self.criterion(**batch, is_train=is_train)
+                batch["loss"], batch["sisdr"] = self.criterion(**batch, have_relevant_speakers=have_relevant_speakers)
 
             self.scaler.scale(batch["loss"] / self.grad_accum_step).backward()
 
@@ -441,9 +449,9 @@ class CausalTrainer(BaseTrainer):
 
         else:
             batch["mix_chunks"], n_chunks = self.streamer.make_chunks(batch["mix"])
-            batch = self.move_batch_to_device(batch, self.device, is_train)
+            batch = self.move_batch_to_device(batch, self.device, False)
             
-            batch["s1"], batch["s2"], batch["s3"] = self.model(batch["mix_chunks"], batch["ref"])
+            batch["s1"], batch["s2"], batch["s3"] = self.model(batch["mix_chunks"], batch["ref"], False)
             length = batch["target"].shape[-1]
             batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
             batch["s1"] = batch["s1"][:, :length]
@@ -452,7 +460,7 @@ class CausalTrainer(BaseTrainer):
             batch["s3"] = self.streamer.apply_overlap_add_method(batch["s3"], n_chunks)
             batch["s3"] = batch["s3"][:, :length]
             
-            batch["loss"], batch["sisdr"] = self.criterion(**batch, is_train=is_train)
+            batch["loss"], batch["sisdr"] = self.criterion(**batch, have_relevant_speakers=False)
         
         metrics.update("loss", batch["loss"].item())
         metrics.update("SISDR", batch["sisdr"].item())

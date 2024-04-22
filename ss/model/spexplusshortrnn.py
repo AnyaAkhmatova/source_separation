@@ -96,7 +96,7 @@ class SpexPlusShortRNN(nn.Module):
         s1 = self.speech_decoder(encs1, mix_init_len)
         return s1, new_memory
 
-    def forward(self, x, ref=None, ref_vec=None, memory=None, one_chunk=False):
+    def forward(self, x, ref=None, have_relevant_speakers=True, ref_vec=None, memory=None, one_chunk=False):
         # training: work with all chunks inside model.forward in oreder to 
         # use ddp backward, otherwise inplace modification error (because of reference processing)
         # validating/testing: work with all chunks inside model.forward as
@@ -107,10 +107,11 @@ class SpexPlusShortRNN(nn.Module):
             batch_size = ref.shape[0]
             n_chunks = x.shape[0] // ref.shape[0]
             ref_encs, _ = self.speech_encoder(ref)
-            if self.training:
-                ref_vec, speaker_logits = self.speaker_encoder(ref_encs)
+            results = self.speaker_encoder(ref_encs, have_relevant_speakers)
+            if have_relevant_speakers:
+                ref_vec, speaker_logits = results
             else:
-                ref_vec = self.speaker_encoder(ref_encs)
+                ref_vec = results
             results = []
             memory = None
             for i in range(n_chunks):
@@ -118,18 +119,19 @@ class SpexPlusShortRNN(nn.Module):
                 res, memory = self.forward_chunk(chunk, ref_vec, memory)
                 results.append(res)           
             s1 = torch.cat(results, dim=0)
-            if self.training:
+            if have_relevant_speakers:
                 return s1, speaker_logits
             return s1            
         # inference
         if ref_vec is None: # have x and ref
             ref_encs, _ = self.speech_encoder(ref)
-            if self.training:
-                ref_vec, speaker_logits = self.speaker_encoder(ref_encs)
+            results = self.speaker_encoder(ref_encs, have_relevant_speakers)
+            if have_relevant_speakers:
+                ref_vec, speaker_logits = results
             else:
-                ref_vec = self.speaker_encoder(ref_encs)
+                ref_vec = results
             s1, new_memory = self.forward_chunk(x, ref_vec, None)
-            if self.training:
+            if have_relevant_speakers:
                 return s1, new_memory, ref_vec, speaker_logits
             return s1, new_memory, ref_vec
         # have x, ref_vec and memory

@@ -28,7 +28,7 @@ class SpexPlusLoss(nn.Module):
         result = (10 * torch.log10((num**2).sum(1) / ((denom**2).sum(1) + self.eps) + self.eps)).mean()
         return result
     
-    def forward(self, s1, s2, s3, target, lens, logits=None, target_id=None, is_train=True, **batch):
+    def forward(self, s1, s2, s3, target, lens, logits=None, target_id=None, have_relevant_speakers=True, **batch):
         mask = self.make_mask(lens)
         lens = lens.reshape(-1, 1)
         si_sdr = self.sisdr(s1, target, mask, lens)
@@ -36,6 +36,6 @@ class SpexPlusLoss(nn.Module):
         result += self.alpha * self.sisdr(s2, target, mask, lens)
         result += self.beta * self.sisdr(s3, target, mask, lens)
         result = -result 
-        if is_train:
-            result += self.gamma * self.ce(logits, target_id) * int(torch.any(target_id != -100).item())
+        if have_relevant_speakers:
+            result += self.gamma * self.ce(logits, target_id)
         return result, si_sdr
