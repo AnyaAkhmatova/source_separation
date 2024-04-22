@@ -36,6 +36,6 @@ class SpexPlusLoss(nn.Module):
         result += self.alpha * self.sisdr(s2, target, mask, lens)
         result += self.beta * self.sisdr(s3, target, mask, lens)
         result = -result 
-        if is_train and torch.any(target_id != -100).item():
-            result += self.gamma * self.ce(logits, target_id)
+        if is_train:
+            result += self.gamma * self.ce(logits, target_id) * int(torch.any(target_id != -100).item())
         return result, si_sdr

@@ -31,6 +31,6 @@ class SpexPlusShortLoss(nn.Module):
         lens = lens.reshape(-1, 1)
         si_sdr = self.sisdr(s1, target, mask, lens)
         result = -si_sdr
-        if is_train and torch.any(target_id != -100).item():
-            result += self.gamma * self.ce(logits, target_id)
+        if is_train:
+            result += self.gamma * self.ce(logits, target_id) * int(torch.any(target_id != -100).item())
         return result, si_sdr
