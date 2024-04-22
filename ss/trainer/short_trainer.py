@@ -65,7 +65,7 @@ class ShortCausalTrainer(BaseTrainer):
         )
 
         self.mode = "train"
-        # self.scaler = torch.cuda.amp.GradScaler()
+        self.scaler = torch.cuda.amp.GradScaler()
 
     def _train_epoch(self, epoch):
         self.mode = "train"
@@ -183,27 +183,25 @@ class ShortCausalTrainer(BaseTrainer):
             if batch_idx % self.grad_accum_step == 0:
                 self.optimizer.zero_grad(set_to_none=True)
 
-            # with torch.cuda.amp.autocast():
-            results = self.model(batch["mix_chunks"], batch["ref"], have_relevant_speakers)
-            if have_relevant_speakers:
-                batch["s1"], batch["logits"] = results
-            else:
-                batch["s1"] = results
-            length = batch["target"].shape[-1]
-            batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
-            batch["s1"] = batch["s1"][:, :length]
-            
-            batch["loss"], batch["sisdr"] = self.criterion(**batch, have_relevant_speakers=have_relevant_speakers)
+            with torch.cuda.amp.autocast():
+                results = self.model(batch["mix_chunks"], batch["ref"], have_relevant_speakers)
+                if have_relevant_speakers:
+                    batch["s1"], batch["logits"] = results
+                else:
+                    batch["s1"] = results
+                length = batch["target"].shape[-1]
+                batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
+                batch["s1"] = batch["s1"][:, :length]
+                
+                batch["loss"], batch["sisdr"] = self.criterion(**batch, have_relevant_speakers=have_relevant_speakers)
 
-            # self.scaler.scale(batch["loss"] / self.grad_accum_step).backward()
-            (batch["loss"] / self.grad_accum_step).backward()
+            self.scaler.scale(batch["loss"] / self.grad_accum_step).backward()
 
             if (batch_idx + 1) % self.grad_accum_step == 0:
-                # self.scaler.unscale_(self.optimizer)
+                self.scaler.unscale_(self.optimizer)
                 self._clip_grad_norm()
-                self.optimizer.step()
-                # self.scaler.step(self.optimizer)
-                # self.scaler.update()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
 
         else:
             batch["mix_chunks"], n_chunks = self.streamer.make_chunks(batch["mix"])
