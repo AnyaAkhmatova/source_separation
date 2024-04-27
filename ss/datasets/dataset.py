@@ -7,7 +7,7 @@ import torchaudio
 
 
 class SourceSeparationDataset(Dataset):
-    def __init__(self, root, part, max_length=20000, filenames_path=None):
+    def __init__(self, root, part, max_length=20000, n_speakers=None, filenames_path=None):
         self.path = os.path.join(root, part)
         self.max_length = max_length
 
@@ -15,6 +15,8 @@ class SourceSeparationDataset(Dataset):
         
         if filenames_path is None:
             self.target_id_data_id = sorted(list(set([file_name.split('/')[-1].split('_')[0] for file_name in self.file_names])))
+            if n_speakers is not None:
+                self.target_id_data_id = self.target_id_data_id[: n_speakers]
         else:
             with open(filenames_path, "r") as f:
                 lines = f.readlines()

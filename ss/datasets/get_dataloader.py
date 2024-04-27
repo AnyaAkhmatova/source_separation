@@ -5,8 +5,8 @@ from .dataset import SourceSeparationDataset
 from .collate_fn import collate_fn
 
 
-def get_dataloader(root, part, batch_size, max_length=20000, filenames_path=None, num_workers=8, pin_memory=True):
-    dataset = SourceSeparationDataset(root, part, max_length, filenames_path)
+def get_dataloader(root, part, batch_size, max_length=20000, n_speakers=None, filenames_path=None, num_workers=8, pin_memory=True):
+    dataset = SourceSeparationDataset(root, part, max_length, n_speakers, filenames_path)
     sampler = DistributedSampler(dataset, shuffle=True)
     dataloader = DataLoader(dataset, 
                             batch_size=batch_size, 

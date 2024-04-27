@@ -13,7 +13,7 @@ class SISDR(BaseMetric):
     def __call__(self, s1, target, **kwargs):
         res = 0
         try:
-            res = self.sisdr(s1, target)
+            res = self.sisdr(s1, target).to(self.device)
         except:
             res = torch.tensor([0.0], device=self.device)
 

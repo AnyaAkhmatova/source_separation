@@ -7,6 +7,7 @@ dataset:
     root: "../../data/ss_data_360_many_speakers/"
     part: "train"
     batch_size: 2
+    n_speakers: 4
     max_length: 4
     num_workers: 1
     pin_memory: True
@@ -22,7 +23,7 @@ streamer:
   chunk_step: 2400
   overlap_add_method: "half"
 arch:
-  type: "SpexPlusShortSpecialChannelsModel"
+  type: "SpexPlusShort"
   args: 
     n_channels: 64
     hidden_channels: 64
@@ -31,8 +32,8 @@ arch:
     n_resnetblocks: 3
     n_stacked_tcnblocks: 4
     n_tcnblocks: 5
+    n_speakers: 4
     causal: False
-    n_sp_channels: 16
 optimizer:
   type: "Adam"
   args:

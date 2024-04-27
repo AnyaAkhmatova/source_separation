@@ -62,10 +62,11 @@ def run_training(rank, world_size, config, save_dir):
     setup(rank, world_size)
 
     dataloaders = {}
-    dataloaders["train"], sampler = get_dataloader(**config["dataset"]["train"])
-    dataloaders["dev"], _ = get_dataloader(**config["dataset"]["dev"])
+    samplers = {}
+    dataloaders["train"], samplers["train"] = get_dataloader(**config["dataset"]["train"])
+    dataloaders["dev"], samplers["dev"] = get_dataloader(**config["dataset"]["dev"])
 
-    model = init_obj(config["arch"], module_arch, n_speakers=dataloaders["train"].dataset.n_speakers)
+    model = init_obj(config["arch"], module_arch)
     model.to(device)
     model = DistributedDataParallel(model)
     if rank == 0:
@@ -96,7 +97,7 @@ def run_training(rank, world_size, config, save_dir):
                       logger,
                       device,
                       dataloaders,
-                      sampler, 
+                      samplers, 
                       len_epoch=config["trainer"].get("len_epoch", None))
 
     trainer.train()

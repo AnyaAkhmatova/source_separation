@@ -16,8 +16,8 @@ class SpeakerExtractorShortGRULikeChannels(nn.Module):
         self.out_channels = out_channels
         self.n_stacked_tcnblocks = n_stacked_tcnblocks
         self.n_tcnblocks = n_tcnblocks
-        
         self.causal = causal
+        
         self.memory_size = memory_size
         if memory_size is None:
             self.memory_size = 2**n_tcnblocks * n_tcnblocks

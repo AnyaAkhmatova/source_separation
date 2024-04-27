@@ -16,11 +16,11 @@ class SpeakerExtractorShortSpecialChannels(nn.Module):
         self.out_channels = out_channels
         self.n_stacked_tcnblocks = n_stacked_tcnblocks
         self.n_tcnblocks = n_tcnblocks
+        self.causal = causal
 
         self.n_sp_channels = n_sp_channels
         if self.n_sp_channels is None:
             self.n_sp_channels = 2**n_tcnblocks
-        self.causal = causal
 
         self.ln1 = nn.LayerNorm(n_channels)
         self.conv1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)

@@ -23,7 +23,7 @@ class Trainer(BaseTrainer):
                  logger,
                  device,
                  dataloaders,
-                 sampler,
+                 samplers,
                  len_epoch=None,
                  skip_oom=True):
         super().__init__(rank, 
@@ -41,8 +41,9 @@ class Trainer(BaseTrainer):
         self.skip_oom = skip_oom
         
         self.train_dataloader = dataloaders["train"]        
-        self.train_sampler = sampler
+        self.train_sampler = samplers["train"]
         self.evaluation_dataloaders = {k: v for k, v in dataloaders.items() if k != "train"}
+        self.evaluation_samplers = {k: v for k, v in samplers.items() if k != "train"}
 
         self.batch_size = self.config["trainer"]["batch_size"]
         self.data_batch_size = self.config["dataset"]["train"]["batch_size"]
@@ -72,7 +73,7 @@ class Trainer(BaseTrainer):
         self.train_sampler.set_epoch(epoch)
 
         if self.rank == 0:
-            self.writer.set_step((epoch - 1) * self.len_epoch)
+            self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step))
             self.writer.add_scalar("epoch", epoch)
 
         for batch_idx, batch in enumerate(
@@ -114,7 +115,7 @@ class Trainer(BaseTrainer):
                 cur_result = self.train_metrics.result_sync()
 
                 if self.rank == 0:
-                    self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
+                    self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + batch_idx // self.grad_accum_step)
                     self.writer.add_scalar(
                         "learning rate", self.optimizer.state_dict()['param_groups'][0]['lr']
                     )
@@ -136,6 +137,7 @@ class Trainer(BaseTrainer):
         self.mode = "eval"
         self.model.eval()
         self.evaluation_metrics.reset()
+        self.evaluation_samplers[part].set_epoch(epoch)
 
         with torch.no_grad():
             for batch in (
@@ -150,7 +152,7 @@ class Trainer(BaseTrainer):
             cur_result = self.evaluation_metrics.result_sync()
 
             if self.rank == 0:
-                self.writer.set_step(epoch * self.len_epoch, part)
+                self.writer.set_step(epoch * (self.len_epoch // self.grad_accum_step), part)
                 self._log_scalars(cur_result)
                 self._log_sample(batch)
 
@@ -263,7 +265,7 @@ class CausalTrainer(BaseTrainer):
                  logger,
                  device,
                  dataloaders,
-                 sampler,
+                 samplers,
                  streamer,
                  len_epoch=None,
                  skip_oom=True):
@@ -282,8 +284,9 @@ class CausalTrainer(BaseTrainer):
         self.skip_oom = skip_oom
         
         self.train_dataloader = dataloaders["train"]        
-        self.train_sampler = sampler
+        self.train_sampler = samplers["train"]
         self.evaluation_dataloaders = {k: v for k, v in dataloaders.items() if k != "train"}
+        self.evaluation_samplers = {k: v for k, v in samplers.items() if k != "train"}
         self.streamer = streamer
 
         self.batch_size = self.config["trainer"]["batch_size"]
@@ -314,7 +317,7 @@ class CausalTrainer(BaseTrainer):
         self.train_sampler.set_epoch(epoch)
 
         if self.rank == 0:
-            self.writer.set_step((epoch - 1) * self.len_epoch)
+            self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step))
             self.writer.add_scalar("epoch", epoch)
 
         for batch_idx, batch in enumerate(
@@ -356,7 +359,7 @@ class CausalTrainer(BaseTrainer):
                 cur_result = self.train_metrics.result_sync()
 
                 if self.rank == 0:
-                    self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
+                    self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + batch_idx // self.grad_accum_step)
                     self.writer.add_scalar(
                         "learning rate", self.optimizer.state_dict()['param_groups'][0]['lr']
                     )
@@ -378,6 +381,7 @@ class CausalTrainer(BaseTrainer):
         self.mode = "eval"
         self.model.eval()
         self.evaluation_metrics.reset()
+        self.evaluation_samplers[part].set_epoch(epoch)
 
         with torch.no_grad():
             for batch in (
@@ -392,7 +396,7 @@ class CausalTrainer(BaseTrainer):
             cur_result = self.evaluation_metrics.result_sync()
 
             if self.rank == 0:
-                self.writer.set_step(epoch * self.len_epoch, part)
+                self.writer.set_step(epoch * (self.len_epoch // self.grad_accum_step), part)
                 self._log_scalars(cur_result)
                 self._log_sample(batch)
 

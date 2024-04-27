@@ -1,9 +1,13 @@
 from .sisdr_metric import SISDR
-from .pesq_metric import PESQ
 from .accuracy_metric import ACC
+from .snr_metric import SNR
+from .stoi_metric import STOI
+from .pesq_metrics import CompositeMetric
 
 __all__ = [
-    "SISDR", 
-    "PESQ", 
-    "ACC"
+    "SISDR",
+    "ACC",
+    "SNR",
+    "STOI",
+    "CompositeMetric"
 ]
