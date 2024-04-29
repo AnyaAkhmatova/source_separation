@@ -13,9 +13,6 @@ class SNR(BaseMetric):
     def __call__(self, s1, target, **kwargs):
         res = 0
         try:
-            s1_coef = torch.max(torch.abs(s1)).item()
-            target_coef = torch.max(torch.abs(target)).item()
-            s1 = s1 * (target_coef / s1_coef)
             res = self.snr(s1, target).to(self.device)
         except:
             res = torch.tensor([0.0], device=self.device)
