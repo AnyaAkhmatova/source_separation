@@ -62,16 +62,17 @@ def normalize_audio(audio):
 
 
 def run_testing(rank, world_size, config):
-    logger = get_logger(config)
+    if rank == 0:
+        logger = get_logger(config)
 
-    wandb.login()
-    if config.get('wandb_project') is None:
-        raise ValueError("Please specify project name for wandb")
-    wandb.init(
-        project=config['wandb_project'],
-        name=config['name'],
-        config=dict(config)
-    )
+        wandb.login()
+        if config.get('wandb_project') is None:
+            raise ValueError("Please specify project name for wandb")
+        wandb.init(
+            project=config['wandb_project'],
+            name=config['name'],
+            config=dict(config)
+        )
 
     device = torch.device("cuda:" + str(rank))
     torch.cuda.set_device(device)
@@ -83,21 +84,24 @@ def run_testing(rank, world_size, config):
     model = init_obj(config["arch"], module_arch)
     model.to(device)
     model = DistributedDataParallel(model, find_unused_parameters=True)
-    logger.info(model)
+    if rank == 0:
+        logger.info(model)
 
-    if config.get('resume') is None:
+    if rank == 0 and config.get('resume') is None:
         raise ValueError("Please specify resume path")
-    logger.info("Loading checkpoint: {} ...".format(config['resume']))
+    if rank == 0:
+        logger.info("Loading checkpoint: {} ...".format(config['resume']))
     checkpoint = torch.load(config['resume'], device)
-    if checkpoint["config"]["arch"] != config["arch"]:
+    if rank == 0 and checkpoint["config"]["arch"] != config["arch"]:
         logger.warning(
             "Warning: Architecture configuration given in config file is different from that "
             "of checkpoint. This may yield an exception while state_dict is being loaded."
         )
     model.load_state_dict(checkpoint["model"])
-    logger.info(
-        "Checkpoint loaded"
-    )
+    if rank == 0:
+        logger.info(
+            "Checkpoint loaded"
+        )
 
     criterion = init_obj(config["loss"], module_loss).to(device)
     metrics = [
@@ -112,12 +116,13 @@ def run_testing(rank, world_size, config):
     
     log_step = config["log_step"]
     sr = config["sr"]
-    df = pd.DataFrame(columns=["mix", "ref", "target", "pred"])
-    df_idx = 0
+    if rank == 0:
+        df = pd.DataFrame(columns=["mix", "ref", "target", "pred"])
+        df_idx = 0
 
     model.eval()
     with torch.no_grad():
-        for batch_idx, batch in enumerate(tqdm(dataloader, desc="testing", total=len(dataloader))):
+        for batch_idx, batch in enumerate(tqdm(dataloader, desc="testing", total=len(dataloader)) if rank == 0 else dataloader):
             for tensor_for_gpu in ["mix", "ref", "target", "lens"]:
                 batch[tensor_for_gpu] = batch[tensor_for_gpu].to(device)
             batch["s1"], batch["s2"], batch["s3"] = model(batch["mix"], batch["ref"], False)
@@ -134,7 +139,7 @@ def run_testing(rank, world_size, config):
                 else:
                     metric_tracker.update(met, met_value.item())
 
-            if batch_idx % log_step == 0:
+            if rank == 0 and batch_idx % log_step == 0:
                 df.loc[df_idx] = [
                     wandb.Audio(normalize_audio(batch["mix"][0]).detach().cpu().numpy().T, sample_rate=sr),
                     wandb.Audio(normalize_audio(batch["ref"][0]).detach().cpu().numpy().T, sample_rate=sr),
@@ -143,17 +148,21 @@ def run_testing(rank, world_size, config):
                 ]
                 df_idx += 1
     
-    wandb.log({"test_results": wandb.Table(dataframe=df)})
+    if rank == 0:
+        wandb.log({"test_results": wandb.Table(dataframe=df)})
 
-    df_vals = pd.DataFrame(columns=["loss", "SI-SDR", *sorted(metrics_names)])
-    vals = []
-    for metric_name in ["loss", "SI-SDR", *sorted(metrics_names)]:
-        metric_value = metric_tracker.avg(metric_name)
-        logger.info("{}: {:.6f}".format(metric_name, metric_value))
-        vals.append(metric_value)
-    df_vals.loc[0] = vals
-    wandb.log({"test_values": wandb.Table(dataframe=df_vals)})
-    logger.info('Test results and values are added to wandb')
+    results = metric_tracker.result_sync()
+
+    if rank == 0:
+        df_vals = pd.DataFrame(columns=["loss", "SI-SDR", *sorted(metrics_names)])
+        vals = []
+        for metric_name in ["loss", "SI-SDR", *sorted(metrics_names)]:
+            metric_value = results[metric_name]
+            logger.info("{}: {:.6f}".format(metric_name, metric_value))
+            vals.append(metric_value)
+        df_vals.loc[0] = vals
+        wandb.log({"test_values": wandb.Table(dataframe=df_vals)})
+        logger.info('Test results and values are added to wandb')
 
     cleanup()
 
@@ -166,8 +175,8 @@ def main(config):
                                                                     'ddp_test.log'
 
     n_gpus = torch.cuda.device_count()
-    assert n_gpus >= 1, "Require >= 1 GPU"
-    world_size = 1
+    assert n_gpus >= config["n_gpu"], "Require >= n_gpu GPU"
+    world_size = config["n_gpu"]
     mp.spawn(run_testing, 
              args=(world_size, config),
              nprocs=world_size,

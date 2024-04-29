@@ -32,8 +32,8 @@ class SourceSeparationDataset(Dataset):
 
     def __getitem__(self, idx):
         mix_name = self.file_names[idx]
-        target_name = mix_name.split('-')[0] + '-target.wav'
-        ref_name = mix_name.split('-')[0] + '-ref.wav'
+        target_name = '-'.join(mix_name.split('-')[:-1]) + '-target.wav'
+        ref_name = '-'.join(mix_name.split('-')[:-1]) + '-ref.wav'
         mix, _ = torchaudio.load(mix_name)
         target, _ = torchaudio.load(target_name)
         ref, _ = torchaudio.load(ref_name)
