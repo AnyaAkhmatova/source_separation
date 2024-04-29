@@ -68,7 +68,7 @@ def run_training(rank, world_size, config, save_dir):
 
     model = init_obj(config["arch"], module_arch)
     model.to(device)
-    model = DistributedDataParallel(model)
+    model = DistributedDataParallel(model, find_unused_parameters=True)
     if rank == 0:
         logger.info(model)
         logger.info("n_speakers: " + str(dataloaders["train"].dataset.n_speakers))

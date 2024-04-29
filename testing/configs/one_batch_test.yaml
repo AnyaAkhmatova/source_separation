@@ -3,7 +3,7 @@ wandb_project: "ss"
 resume: "../training/outputs/2024-04-22/10-43-45/model_best.pth"
 n_gpu: 1
 sr: 16000
-log_step: 500
+log_step: 2
 dataset:
   sr: 16000
   test:

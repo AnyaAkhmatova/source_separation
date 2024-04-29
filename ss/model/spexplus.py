@@ -68,8 +68,7 @@ class SpeakerEncoder(nn.Module):
 
 
 class SpeakerExtractor(nn.Module):
-    def __init__(self, n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal=False, 
-                 force_channelwise_norm=False):
+    def __init__(self, n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal=False):
         super().__init__()
         self.n_channels = n_channels
         self.hidden_channels = hidden_channels
@@ -77,7 +76,6 @@ class SpeakerExtractor(nn.Module):
         self.n_stacked_tcnblocks = n_stacked_tcnblocks
         self.n_tcnblocks = n_tcnblocks
         self.causal = causal
-        self.force_channelwise_norm = force_channelwise_norm
 
         self.ln1 = nn.LayerNorm(n_channels * 3)
         self.conv1 = nn.Conv1d(n_channels * 3, n_channels, kernel_size=1)
@@ -85,10 +83,8 @@ class SpeakerExtractor(nn.Module):
         self.stacked_tcnblocks = []
         for _ in range(n_stacked_tcnblocks):
             self.stacked_tcnblocks.append(nn.ModuleList(
-                [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal, 
-                             force_channelwise_norm=force_channelwise_norm),
-                *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal, 
-                           force_channelwise_norm=force_channelwise_norm) for i in range(1, n_tcnblocks)]]
+                [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
             ))
         self.stacked_tcnblocks = nn.ModuleList(self.stacked_tcnblocks)
 
@@ -150,15 +146,13 @@ class SpexPlus(nn.Module):
                  n_speakers,
                  n_stacked_tcnblocks,
                  n_tcnblocks, 
-                 causal=False,
-                 force_channelwise_norm=False):
+                 causal=False):
         super().__init__()
         self.causal = causal
 
         self.speech_encoder = SpeechEncoder(n_channels, short_kernel, middle_kernel, long_kernel)
         self.speaker_encoder = SpeakerEncoder(n_channels, out_channels, n_resnetblocks, n_speakers)
-        self.speaker_extractor = SpeakerExtractor(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal, 
-                                                  force_channelwise_norm=force_channelwise_norm)
+        self.speaker_extractor = SpeakerExtractor(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal)
         self.speech_decoder = SpeechDecoder(n_channels, short_kernel, middle_kernel, long_kernel)
 
     def forward(self, x, ref, have_relevant_speakers):

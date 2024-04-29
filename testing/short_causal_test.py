@@ -85,7 +85,7 @@ def run_testing(rank, world_size, config):
 
     model = init_obj(config["arch"], module_arch)
     model.to(device)
-    model = DistributedDataParallel(model)
+    model = DistributedDataParallel(model, find_unused_parameters=True)
     logger.info(model)
 
     if config.get('resume') is None:
@@ -175,8 +175,8 @@ def main(config):
                                                                     'ddp_test.log'
 
     n_gpus = torch.cuda.device_count()
-    assert n_gpus == 1, "Require exactly 1 GPU"
-    world_size = n_gpus
+    assert n_gpus >= 1, "Require >= 1 GPU"
+    world_size = 1
     mp.spawn(run_testing, 
              args=(world_size, config),
              nprocs=world_size,

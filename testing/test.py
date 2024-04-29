@@ -82,7 +82,7 @@ def run_testing(rank, world_size, config):
 
     model = init_obj(config["arch"], module_arch)
     model.to(device)
-    model = DistributedDataParallel(model)
+    model = DistributedDataParallel(model, find_unused_parameters=True)
     logger.info(model)
 
     if config.get('resume') is None:
@@ -108,7 +108,7 @@ def run_testing(rank, world_size, config):
     metrics_names = [met_name for met_name in metrics.keys() if met_name != "CompositeMetric"]
     if "CompositeMetric" in metrics.keys():
         metrics_names += [met_name.upper() for met_name in ["csig", "cbak","covl", "pesq", "ssnr"]]
-    metric_tracker = MetricTracker("loss", "SISDR", *sorted(metrics_names), device=device)
+    metric_tracker = MetricTracker("loss", "SI-SDR", *sorted(metrics_names), device=device)
     
     log_step = config["log_step"]
     sr = config["sr"]
@@ -121,15 +121,15 @@ def run_testing(rank, world_size, config):
             for tensor_for_gpu in ["mix", "ref", "target", "lens"]:
                 batch[tensor_for_gpu] = batch[tensor_for_gpu].to(device)
             batch["s1"], batch["s2"], batch["s3"] = model(batch["mix"], batch["ref"], False)
-            batch["loss"], batch["sisdr"] = criterion(**batch, have_relevant_speakers=False)
+            batch["loss"], batch["si-sdr"] = criterion(**batch, have_relevant_speakers=False)
 
             metric_tracker.update("loss", batch["loss"].item())
-            metric_tracker.update("SISDR", batch["sisdr"].item())
+            metric_tracker.update("SI-SDR", batch["si-sdr"].item())
 
             for met in metrics.keys():
                 met_value = metrics[met](**batch)
-                if isinstance(metric_value, dict):
-                    for key, value in met_value:
+                if isinstance(met_value, dict):
+                    for key, value in met_value.items():
                         metric_tracker.update(key.upper(), value.item())
                 else:
                     metric_tracker.update(met, met_value.item())
@@ -145,9 +145,9 @@ def run_testing(rank, world_size, config):
     
     wandb.log({"test_results": wandb.Table(dataframe=df)})
 
-    df_vals = pd.DataFrame(columns=["loss", "SISDR", *sorted(metrics_names)])
+    df_vals = pd.DataFrame(columns=["loss", "SI-SDR", *sorted(metrics_names)])
     vals = []
-    for metric_name in ["loss", "SISDR", *sorted(metrics_names)]:
+    for metric_name in ["loss", "SI-SDR", *sorted(metrics_names)]:
         metric_value = metric_tracker.avg(metric_name)
         logger.info("{}: {:.6f}".format(metric_name, metric_value))
         vals.append(metric_value)
@@ -166,8 +166,8 @@ def main(config):
                                                                     'ddp_test.log'
 
     n_gpus = torch.cuda.device_count()
-    assert n_gpus == 1, "Require exactly 1 GPU"
-    world_size = n_gpus
+    assert n_gpus >= 1, "Require >= 1 GPU"
+    world_size = 1
     mp.spawn(run_testing, 
              args=(world_size, config),
              nprocs=world_size,
