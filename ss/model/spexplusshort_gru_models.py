@@ -66,7 +66,7 @@ class SpeakerExtractorShortGRULikeChannels(nn.Module):
                 self.cache = None
             elif version == 3:
                 self.cache = []
-                self.fms_layers = [FMS(time_dim, 1) for i in range(n_stacked_tcnblocks)]
+                self.fms_layers = nn.ModuleList([FMS(time_dim, 1) for i in range(n_stacked_tcnblocks)])
 
         self.mask1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)
         self.relu = nn.ReLU()

@@ -171,7 +171,7 @@ class BaseTrainer:
                 "Warning: Architecture configuration given in config file is different from that "
                 "of checkpoint. This may yield an exception while state_dict is being loaded."
             )
-        self.model.load_state_dict(checkpoint["model"])
+        self.model.load_state_dict(checkpoint["model"], strict=False)
 
         if self.config.continue_from_checkpoint:
             self.start_epoch = checkpoint["epoch"] + 1
