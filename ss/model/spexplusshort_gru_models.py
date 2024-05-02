@@ -75,9 +75,9 @@ class SpeakerExtractorShortGRULikeChannels(nn.Module):
         if memory is None:
             memory = torch.zeros((x.shape[0], self.memory_size, x.shape[-1]), dtype=x.dtype, device=x.device)
             if self.version == 1:
-                self.cache = [torch.ones((x.shape[0], self.cache_size, x.shape[-1]), dtype=x.dtype, device=x.device) for _ in range(len(self.stacked_tcnblocks))]
+                self.cache = [torch.zeros((x.shape[0], self.cache_size, x.shape[-1]), dtype=x.dtype, device=x.device) for _ in range(len(self.stacked_tcnblocks))]
             elif self.version == 2:
-                self.cache = torch.ones((x.shape[0], self.cache_size, x.shape[-1]), dtype=x.dtype, device=x.device)
+                self.cache = torch.zeros((x.shape[0], self.cache_size, x.shape[-1]), dtype=x.dtype, device=x.device)
             elif self.version == 3:
                 self.cache = [torch.ones((x.shape[0], self.cache_size, x.shape[-1]), dtype=x.dtype, device=x.device) for _ in range(len(self.stacked_tcnblocks))]
 
@@ -87,11 +87,11 @@ class SpeakerExtractorShortGRULikeChannels(nn.Module):
         for i in range(0, len(self.stacked_tcnblocks) - 1):
             if self.version == 1:
                 to_cache = y.clone().detach()
-                y = y * self.cache[i]
+                y = y + self.cache[i]
                 self.cache[i] = to_cache
             elif self.version == 2 and i == 0:
                 to_cache = y.clone().detach()
-                y = y * self.cache
+                y = y + self.cache
                 self.cache = to_cache
             elif self.version == 3:
                 to_cache = y.clone().detach()
@@ -100,7 +100,7 @@ class SpeakerExtractorShortGRULikeChannels(nn.Module):
             y = self.apply_stacked_tcn_blocks(self.stacked_tcnblocks[i], y, ref)
         if self.version == 1:
             to_cache = y.clone().detach()
-            y = y * self.cache[-1]
+            y = y + self.cache[-1]
             self.cache[-1] = to_cache
         elif self.version == 3:
             to_cache = y.clone().detach()
