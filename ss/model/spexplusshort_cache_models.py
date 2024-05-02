@@ -54,7 +54,7 @@ class SpeakerExtractorShortCacheChannels(nn.Module):
         for i in range(len(self.stacked_tcnblocks)):
             y = torch.cat([y, self.cache[i]], dim=-2)
             make_memory_from = y[:, : y.shape[-2] - self.memory_size, :]
-            self.cache[i] = (make_memory_from[:, : self.memory_size, :]).detach()
+            self.cache[i] = (make_memory_from[:, : self.memory_size, :]).clone().detach()
             y = self.apply_stacked_tcn_blocks(self.stacked_tcnblocks[i], y, ref)
         
         mask1 = self.relu(self.mask1(y))
