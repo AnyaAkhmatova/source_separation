@@ -35,31 +35,66 @@ class SpeakerExtractorShortGRULikeChannels(nn.Module):
             memory_size = self.memory_size
         self.version = version
         self.time_dim = time_dim
+        self.cache_size = n_channels
 
         self.ln1 = nn.LayerNorm(n_channels)
         self.conv1 = nn.Conv1d(n_channels, n_channels, kernel_size=1)
 
         self.stacked_tcnblocks = []
-        for _ in range(n_stacked_tcnblocks - 1):
+        if version == 0 or version == 3:
+            for _ in range(n_stacked_tcnblocks - 1):
+                self.stacked_tcnblocks.append(
+                    nn.ModuleList(
+                        [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                        *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    )
+                )
             self.stacked_tcnblocks.append(
                 nn.ModuleList(
-                    [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                    [TCNBlockRef(n_channels + self.memory_size, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal, out_channels=n_channels),
                     *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
                 )
             )
-        self.stacked_tcnblocks.append(
-            nn.ModuleList(
-                [TCNBlockRef(n_channels + self.memory_size, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal, out_channels=n_channels),
-                *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+        elif version == 1:
+            for _ in range(n_stacked_tcnblocks - 1):
+                self.stacked_tcnblocks.append(
+                    nn.ModuleList(
+                        [TCNBlockRef(n_channels + self.cache_size, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal, out_channels=n_channels),
+                        *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    )
+                )
+            self.stacked_tcnblocks.append(
+                nn.ModuleList(
+                    [TCNBlockRef(n_channels + self.cache_size + self.memory_size, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal, out_channels=n_channels),
+                    *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                )
             )
-        )
+        elif version == 2:
+            self.stacked_tcnblocks.append(
+                nn.ModuleList(
+                    [TCNBlockRef(n_channels + self.cache_size, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal, out_channels=n_channels),
+                    *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                )
+            )
+            for _ in range(n_stacked_tcnblocks - 2):
+                self.stacked_tcnblocks.append(
+                    nn.ModuleList(
+                        [TCNBlockRef(n_channels, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal),
+                        *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                    )
+                )
+            self.stacked_tcnblocks.append(
+                nn.ModuleList(
+                    [TCNBlockRef(n_channels + self.memory_size, hidden_channels, dilation=2**0, ref_dim=out_channels, causal=causal, out_channels=n_channels),
+                    *[TCNBlock(n_channels, hidden_channels, dilation=2**i, causal=causal) for i in range(1, n_tcnblocks)]]
+                )
+            )
         self.stacked_tcnblocks = nn.ModuleList(self.stacked_tcnblocks)
 
         self.gate = nn.Conv1d(n_channels, self.memory_size, kernel_size=1)
         self.make_memory = TCNBlock(n_channels, hidden_channels, dilation=2**0, causal=causal, out_channels=self.memory_size)
 
         if version in [1, 2, 3]:
-            self.cache_size = n_channels
             if version == 1:
                 self.cache = []
             elif version == 2:
@@ -87,11 +122,11 @@ class SpeakerExtractorShortGRULikeChannels(nn.Module):
         for i in range(0, len(self.stacked_tcnblocks) - 1):
             if self.version == 1:
                 to_cache = y.clone().detach()
-                y = y + self.cache[i]
+                y = torch.cat([y, self.cache[i]], dim=-2)
                 self.cache[i] = to_cache
             elif self.version == 2 and i == 0:
                 to_cache = y.clone().detach()
-                y = y + self.cache
+                y = torch.cat([y, self.cache], dim=-2)
                 self.cache = to_cache
             elif self.version == 3:
                 to_cache = y.clone().detach()
@@ -100,7 +135,7 @@ class SpeakerExtractorShortGRULikeChannels(nn.Module):
             y = self.apply_stacked_tcn_blocks(self.stacked_tcnblocks[i], y, ref)
         if self.version == 1:
             to_cache = y.clone().detach()
-            y = y + self.cache[-1]
+            y = torch.cat([y, self.cache[-1]], dim=-2)
             self.cache[-1] = to_cache
         elif self.version == 3:
             to_cache = y.clone().detach()
