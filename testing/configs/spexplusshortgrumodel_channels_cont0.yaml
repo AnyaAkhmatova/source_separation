@@ -1,0 +1,36 @@
+name: "spexplusshortgrumodel_channels_cont_test"
+wandb_project: "online_target_source_separation"
+resume: "../training/outputs/2024-05-03/00-08-34/model_best.pth"
+n_gpu: 2
+sr: 16000
+log_step: 250
+dataset:
+  sr: 16000
+  test:
+    root: "../../data/ss_data_new/"
+    part: "test"
+    batch_size: 1
+    max_length: 1000000
+    num_workers: 8
+    pin_memory: False
+streamer:
+  chunk_window: 4800
+  chunk_step: 2400
+  overlap_add_method: "half"
+arch:
+  type: "SpexPlusShortGRUModel"
+  args: 
+    n_channels: 256
+    hidden_channels: 512
+    out_channels: 100
+    short_kernel: 40
+    n_resnetblocks: 3
+    n_speakers: 921
+    n_stacked_tcnblocks: 4
+    n_tcnblocks: 5
+    dimension: "channels"
+    causal: False
+loss:
+  type: "SpexPlusShortLoss"
+  args: {}
+metrics: []

@@ -1,8 +1,8 @@
 from torch.utils.data import DataLoader 
 from torch.utils.data.distributed import DistributedSampler
 
-from .dataset import SourceSeparationDataset
-from .collate_fn import collate_fn
+from .dataset import SourceSeparationDataset, SourceSeparationInferenceDataset
+from .collate_fn import collate_fn, inference_collate_fn
 
 
 def get_dataloader(root, part, batch_size, max_length=20000, n_speakers=None, filenames_path=None, num_workers=8, pin_memory=True):
@@ -15,3 +15,16 @@ def get_dataloader(root, part, batch_size, max_length=20000, n_speakers=None, fi
                             collate_fn=collate_fn,
                             pin_memory=pin_memory)
     return dataloader, sampler
+
+
+def get_inference_dataloader(root, part, test_mode=False, num_workers=8):
+    dataset = SourceSeparationInferenceDataset(root, part, test_mode)
+    sampler = DistributedSampler(dataset)
+    dataloader = DataLoader(dataset, 
+                            batch_size=1, 
+                            sampler=sampler,
+                            num_workers=num_workers, 
+                            collate_fn=inference_collate_fn,
+                            pin_memory=False)
+    return dataloader
+

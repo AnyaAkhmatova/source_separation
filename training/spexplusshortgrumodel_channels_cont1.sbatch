@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name="SpexPlusShortGRUModel-channels-cont1-train"
 #SBATCH --output="spexplusshortgrumodel-channels-cont1-train.out"
-#SBATCH --time=20:0:0
+#SBATCH --time=10:0:0
 #SBATCH --nodes=1
 #SBATCH --gpus=2
 #SBATCH --cpus-per-task=2

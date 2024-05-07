@@ -44,3 +44,36 @@ class SourceSeparationDataset(Dataset):
             "ref": ref,
             "target_id": target_id
         }
+    
+
+class SourceSeparationInferenceDataset(Dataset):
+    def __init__(self, root, part, test_mode=False):
+        self.path = os.path.join(root, part)
+        self.test_mode = test_mode
+
+        self.file_names = sorted(glob(os.path.join(self.path, '*-mixed.wav')))
+
+    def __len__(self):
+        return len(self.file_names)
+
+    def __getitem__(self, idx):
+        mix_name = self.file_names[idx]
+        ref_name = '-'.join(mix_name.split('-')[:-1]) + '-ref.wav'
+        pred_name = '-'.join(mix_name.split('/')[-1].split('-')[:-1]) + '-pred.wav'
+        mix, _ = torchaudio.load(mix_name)
+        ref, _ = torchaudio.load(ref_name)
+        if not self.test_mode:
+            return {
+                "mix": mix,
+                "ref": ref,
+                "pred_name": pred_name,
+            }
+
+        target_name = '-'.join(mix_name.split('-')[:-1]) + '-target.wav'
+        target, _ = torchaudio.load(target_name)
+        return {
+            "mix": mix,
+            "ref": ref,
+            "pred_name": pred_name,
+            "target": target
+        }

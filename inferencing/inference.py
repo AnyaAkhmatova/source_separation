@@ -1,95 +1,138 @@
 import os
-import glob
-from glob import glob
-from pathlib import Path
 import logging 
 import warnings
 
-import hydra
-import wandb
+import numpy as np
+import random
 
 import torch
-import torchaudio
-import pandas as pd
-from tqdm import tqdm
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel
+import torch.multiprocessing as mp
 
+import hydra
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import OmegaConf, open_dict
+
+import ss.loss as module_loss
+import ss.metric as module_metric
 import ss.model as module_arch
+from ss.inferencer import Inferencer
 from ss.utils import init_obj
+from ss.datasets import get_inference_dataloader
 
 warnings.filterwarnings("ignore")
 
 
-@hydra.main(version_base=None, config_path=".", config_name="config")
-def main(config):
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    
-    wandb.login()
-    if config.get('wandb_project') is None:
-        raise ValueError("please specify project name for wandb")
-    wandb.init(
-        project=config['wandb_project'],
-        config=dict(config)
+SEED = 42
+torch.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = True
+np.random.seed(SEED)
+random.seed(SEED)
+
+
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12345'
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+def cleanup():
+    dist.destroy_process_group()
+
+
+def get_logger(config, name=None):
+    logging.config.dictConfig(
+        OmegaConf.to_container(config.job_logging_config)
     )
-    
-    save_dir = config["output_dir"]
-    Path(save_dir).mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    return logger
 
-    load_dir = config["input_dir"]
-    mixes = sorted(glob(os.path.join(load_dir, '*-mixed.wav')))
-    refs = sorted(glob(os.path.join(load_dir, '*-ref.wav')))
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(device)
+def run_inferencing(rank, world_size, config):
+    if rank == 0:
+        logger = get_logger(config)
+    else:
+        logger = None
 
-    model = init_obj(config["arch"], module_arch, n_speakers=config["n_speakers"]).to(device)
-    logger.info(model)
+    device = torch.device("cuda:" + str(rank))
+    torch.cuda.set_device(device)
 
-    if config.get('resume') is None:
-        raise ValueError("please specify resume path")
-    logger.info("Loading checkpoint: {} ...".format(config['resume']))
+    setup(rank, world_size)
+
+    model = init_obj(config["arch"], module_arch)
+    model.to(device)
+    model = DistributedDataParallel(model, find_unused_parameters=True)
+    if rank == 0:
+        logger.info(model)
+
+    if rank == 0 and config.get('resume') is None:
+        raise ValueError("Please specify resume path")
+    if rank == 0:
+        logger.info("Loading checkpoint: {} ...".format(config['resume']))
     checkpoint = torch.load(config['resume'], device)
-    if checkpoint["config"]["arch"] != config["arch"]:
+    if rank == 0 and checkpoint["config"]["arch"] != config["arch"]:
         logger.warning(
             "Warning: Architecture configuration given in config file is different from that "
             "of checkpoint. This may yield an exception while state_dict is being loaded."
         )
-    model.load_state_dict(checkpoint["state_dict"])
-    logger.info(
-        "Checkpoint loaded."
-    )
+    model.load_state_dict(checkpoint["model"])
+    if rank == 0:
+        logger.info(
+            "Checkpoint loaded"
+        )
 
-    log_step = config["log_step"]
-    sr = config["sr"]
-    df = pd.DataFrame(columns=["mix", "ref", "pred"])
-    df_idx = 0
+    dataloader = get_inference_dataloader(**config["dataset"]["inference"])
 
-    model.eval()
-    with torch.no_grad():
-        for idx in tqdm(range(len(mixes)), desc="inferencing", total=len(mixes)):
-            mix, _ = torchaudio.load(mixes[idx])
-            ref, _ = torchaudio.load(refs[idx])
-            batch = {"mix": mix, "ref": ref}
-            for tensor_for_gpu in ["mix", "ref"]:
-                batch[tensor_for_gpu] = batch[tensor_for_gpu].to(device)
-            s1, _, _, _ = model(batch["mix"], batch["ref"])
-            if idx % log_step == 0:
-                df.loc[df_idx] = [
-                    wandb.Audio(batch["mix"][0].detach().cpu().numpy().T, sample_rate=sr),
-                    wandb.Audio(batch["ref"][0].detach().cpu().numpy().T, sample_rate=sr),
-                    wandb.Audio(s1[0].detach().cpu().numpy().T, sample_rate=sr) 
-                ]
-                df_idx += 1
-            torchaudio.save(
-                os.path.join(save_dir, mixes[idx].split("/")[-1].split("-")[0] + '-pred.wav'), 
-                s1.detach().cpu(), 
-                sample_rate=sr
-            )
+    test_mode = config["dataset"]["inference"]["test_mode"]
+    if test_mode:
+        criterion = init_obj(config["loss"], module_loss).to(device)
+        metrics = [
+            init_obj(metric_dict, module_metric, device=device)
+            for metric_dict in config["metrics"]
+        ]
+        metrics = {met.name: met for met in metrics}
+    else:
+        criterion = None
+        metrics = None
     
-    wandb.log({"inference_results": wandb.Table(dataframe=df)})
+    save_inference = config["save_inference"]
+    save_dir = config.get("save_dir", None)
 
-    logger.info('Inference results are added to wandb')
+    inferencer = Inferencer(rank, 
+                            world_size,
+                            model,
+                            dataloader,
+                            config,
+                            device,
+                            logger,
+                            test_mode,
+                            criterion,
+                            metrics,
+                            save_inference,
+                            save_dir)
+
+    inferencer.run()
+
+    cleanup()
+
+
+@hydra.main(version_base=None, config_path=".", config_name="config")
+def main(config):
+    with open_dict(config):
+        config.job_logging_config = HydraConfig.get().job_logging 
+        config.job_logging_config.handlers.file.filename = HydraConfig.get().runtime.output_dir + '/' + \
+                                                                    'ddp_inference.log'
+
+    n_gpus = torch.cuda.device_count()
+    assert n_gpus >= config["n_gpu"], "Require >= n_gpu GPUs"
+    world_size = config["n_gpu"]
+    mp.spawn(run_inferencing, 
+             args=(world_size, config),
+             nprocs=world_size,
+             join=True)
+
 
 if __name__ == "__main__":
     main()
-

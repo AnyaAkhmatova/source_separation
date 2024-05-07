@@ -129,20 +129,38 @@ class SpexPlusShort(nn.Module):
         self.speaker_extractor = SpeakerExtractorShort(n_channels, hidden_channels, out_channels, n_stacked_tcnblocks, n_tcnblocks, causal)
         self.speech_decoder = SpeechDecoderShort(n_channels, short_kernel)
 
-    def forward(self, x, ref, have_relevant_speakers):
+    def forward(self, x, ref=None, have_relevant_speakers=True, ref_vec=None, one_chunk=False):
+        if not one_chunk:
+            mix_encs, mix_init_len = self.speech_encoder(x)
+
+            ref_encs, _ = self.speech_encoder(ref)
+            results = self.speaker_encoder(ref_encs, have_relevant_speakers)
+            if have_relevant_speakers:
+                ref_vec, speaker_logits = results
+            else:
+                ref_vec = results
+
+            ref_vec = ref_vec.repeat(x.shape[0] // ref_vec.shape[0], 1)
+
+            encs1 = self.speaker_extractor(mix_encs, ref_vec)
+            s1 = self.speech_decoder(encs1, mix_init_len)
+            if have_relevant_speakers:
+                return s1, speaker_logits
+            return s1
+        if ref_vec is None:
+            ref_encs, _ = self.speech_encoder(ref)
+            results = self.speaker_encoder(ref_encs, have_relevant_speakers)
+            if have_relevant_speakers:
+                ref_vec, speaker_logits = results
+            else:
+                ref_vec = results
+            mix_encs, mix_init_len = self.speech_encoder(x)
+            encs1 = self.speaker_extractor(mix_encs, ref_vec)
+            s1 = self.speech_decoder(encs1, mix_init_len)
+            if have_relevant_speakers:
+                return s1, ref_vec, speaker_logits
+            return s1, ref_vec
         mix_encs, mix_init_len = self.speech_encoder(x)
-
-        ref_encs, _ = self.speech_encoder(ref)
-        results = self.speaker_encoder(ref_encs, have_relevant_speakers)
-        if have_relevant_speakers:
-            ref_vec, speaker_logits = results
-        else:
-            ref_vec = results
-
-        ref_vec = ref_vec.repeat(x.shape[0] // ref_vec.shape[0], 1)
-
-        encs1 = self.speaker_extractor(mix_encs, ref_vec)
+        encs1  = self.speaker_extractor(mix_encs, ref_vec)
         s1 = self.speech_decoder(encs1, mix_init_len)
-        if have_relevant_speakers:
-            return s1, speaker_logits
         return s1
