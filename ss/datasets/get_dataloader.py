@@ -17,8 +17,8 @@ def get_dataloader(root, part, batch_size, max_length=20000, n_speakers=None, fi
     return dataloader, sampler
 
 
-def get_inference_dataloader(root, part, test_mode=False, num_workers=8):
-    dataset = SourceSeparationInferenceDataset(root, part, test_mode)
+def get_inference_dataloader(root, part, max_length=20000, test_mode=False, num_workers=8):
+    dataset = SourceSeparationInferenceDataset(root, part, max_length, test_mode)
     sampler = DistributedSampler(dataset)
     dataloader = DataLoader(dataset, 
                             batch_size=1, 

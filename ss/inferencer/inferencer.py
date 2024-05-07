@@ -8,7 +8,6 @@ import torchaudio
 
 import wandb
 
-from ss.wandb import WanDBWriter
 from ss.utils import MetricTracker
 
 
@@ -37,9 +36,14 @@ class Inferencer:
 
         if rank == 0:
             self.logger = logger
-            self.writer = WanDBWriter(
-                config, self.logger
-            )    
+            wandb.login()
+            if config.get('wandb_project') is None:
+                raise ValueError("Please specify project name for wandb")
+            wandb.init(
+                project=config['wandb_project'],
+                name=config['name'],
+                config=dict(config)
+            )
             self.log_step = config["log_step"]
         self.sr = config["dataset"]["sr"]
         if rank == 0 and test_mode:
@@ -128,7 +132,7 @@ class Inferencer:
                 )
 
         if self.rank == 0:
-            self.writer.add_table("inference_results", self.df)
+            wandb.log({"inference_results": wandb.Table(dataframe=self.df)})
             self.logger.info('Inference results are added to wandb')
         
         if self.test_mode:
@@ -140,7 +144,7 @@ class Inferencer:
                     self.logger.info("{}: {:.6f}".format(metric_name, metric_value))
                     vals.append(metric_value)
                 self.df_values.loc[0] = vals
-                self.writer.add_table("inference_values", self.df_values)
+                wandb.log({"inference_values": wandb.Table(dataframe=self.df_values)})
                 self.logger.info('Inference values are added to wandb')
 
 
@@ -171,9 +175,14 @@ class CausalInferencer:
 
         if rank == 0:
             self.logger = logger
-            self.writer = WanDBWriter(
-                config, self.logger
-            )    
+            wandb.login()
+            if config.get('wandb_project') is None:
+                raise ValueError("Please specify project name for wandb")
+            wandb.init(
+                project=config['wandb_project'],
+                name=config['name'],
+                config=dict(config)
+            )
             self.log_step = config["log_step"]
         self.sr = config["dataset"]["sr"]
         if rank == 0 and test_mode:
@@ -229,7 +238,7 @@ class CausalInferencer:
             batch["s2"] = []
             batch["s3"] = []
             for i in range(n_chunks):
-                chunk = batch["mix"][i: i + 1, :]
+                chunk = batch["mix_chunks"][i: i + 1, :]
                 if i == 0:
                     s1, s2, s3, ref_vec = self.model(chunk, batch["ref"], False, one_chunk=True)
                     batch["s1"].append(s1)
@@ -288,7 +297,7 @@ class CausalInferencer:
                 )
 
         if self.rank == 0:
-            self.writer.add_table("inference_results", self.df)
+            wandb.log({"inference_results": wandb.Table(dataframe=self.df)})
             self.logger.info('Inference results are added to wandb')
         
         if self.test_mode:
@@ -300,5 +309,5 @@ class CausalInferencer:
                     self.logger.info("{}: {:.6f}".format(metric_name, metric_value))
                     vals.append(metric_value)
                 self.df_values.loc[0] = vals
-                self.writer.add_table("inference_values", self.df_values)
+                wandb.log({"inference_values": wandb.Table(dataframe=self.df_values)})
                 self.logger.info('Inference values are added to wandb')

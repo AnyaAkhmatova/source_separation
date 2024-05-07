@@ -28,11 +28,11 @@ def collate_fn(batch):
 
 
 def inference_collate_fn(batch):
-    if batch.get("target", None) is None:
+    if batch[0].get("target", None) is None:
         return {
             "mix": batch[0]["mix"],
             "ref": batch[0]["ref"],
-            "lens": torch.tensor(batch[0]["mix"].shape[-1], dtype=int),
+            "lens": torch.tensor(batch[0]["mix"].shape[-1], dtype=int).reshape(1),
             "pred_name": [batch[0]["pred_name"]]
         }
     
@@ -40,6 +40,6 @@ def inference_collate_fn(batch):
         "mix": batch[0]["mix"],
         "ref": batch[0]["ref"],
         "target": batch[0]["target"],
-        "lens": torch.tensor(batch[0]["mix"].shape[-1], dtype=int),
+        "lens": torch.tensor(batch[0]["mix"].shape[-1], dtype=int).reshape(1),
         "pred_name": [batch[0]["pred_name"]]
     }

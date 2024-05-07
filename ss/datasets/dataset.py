@@ -47,11 +47,12 @@ class SourceSeparationDataset(Dataset):
     
 
 class SourceSeparationInferenceDataset(Dataset):
-    def __init__(self, root, part, test_mode=False):
+    def __init__(self, root, part, max_length=20000, test_mode=False):
         self.path = os.path.join(root, part)
+        self.max_length = max_length
         self.test_mode = test_mode
 
-        self.file_names = sorted(glob(os.path.join(self.path, '*-mixed.wav')))
+        self.file_names = sorted(glob(os.path.join(self.path, '*-mixed.wav')))[:self.max_length]
 
     def __len__(self):
         return len(self.file_names)
