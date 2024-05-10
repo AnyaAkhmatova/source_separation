@@ -7,6 +7,13 @@ import torch
 import torch.distributed as dist
 
 
+
+def prepare_device(n_gpu_use):
+    device = torch.device("cuda:0" if n_gpu_use > 0 else "cpu")
+    list_ids = list(range(n_gpu_use))
+    return device, list_ids
+
+
 def init_obj(obj_dict, default_module, *args, **kwargs):
     if "module" in obj_dict:
         default_module = importlib.import_module(obj_dict["module"])

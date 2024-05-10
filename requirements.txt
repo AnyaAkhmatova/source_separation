@@ -1,10 +1,10 @@
-torch
+torch==2.1.1
 numpy
 tqdm
 matplotlib
 pandas
 
-torchaudio
+torchaudio==2.1.1
 pesq
 pystoi
 torchmetrics
@@ -15,3 +15,6 @@ pyloudnorm
 
 wandb
 hydra-core
+
+sparseml
+deepsparse
