@@ -187,7 +187,7 @@ class SimpleShortCausalTrainer:
 
             batch["ref_vec"], batch["logits"] = self.speaker_handler(batch["ref"])
             batch["s1"] = []
-            memory = torch.zeros((batch_size, self.config["arch"]["args"]["memory_size"], batch["mix_chunks"].shape[-1]), 
+            memory = torch.zeros((batch_size, self.config["main_model"]["memory_size"], self.config["time_dim"]), 
                                     dtype=torch.float32, device=self.device)
             for i in range(n_chunks):
                 chunk = batch["mix_chunks"][i * batch_size: (i + 1) * batch_size]
@@ -212,13 +212,13 @@ class SimpleShortCausalTrainer:
             batch_size = batch["mix_chunks"].shape[0] // n_chunks
             batch = self.move_batch_to_device(batch, self.device)
 
-            batch["ref_vec"], batch["logits"] = self.model.speaker_handler(batch["ref"])
+            batch["ref_vec"], batch["logits"] = self.speaker_handler(batch["ref"])
             batch["s1"] = []
-            memory = torch.zeros((batch_size, self.config["arch"]["args"]["memory_size"], batch["mix_chunks"].shape[-1]), 
+            memory = torch.zeros((batch_size, self.config["main_model"]["memory_size"], self.config["time_dim"]), 
                                  dtype=torch.float32, device=self.device)
             for i in range(n_chunks):
                 chunk = batch["mix_chunks"][i * batch_size: (i + 1) * batch_size]
-                s1_chunk, memory = self.model.main_model(chunk, batch["ref_vec"], memory)
+                s1_chunk, memory = self.main_model(chunk, batch["ref_vec"], memory)
                 batch["s1"].append(s1_chunk)
             batch["s1"] = torch.cat(batch["s1"], dim=0)
             length = batch["target"].shape[-1]
@@ -238,7 +238,7 @@ class SimpleShortCausalTrainer:
     
     @torch.no_grad()
     def get_grad_norm(self, norm_type=2):
-        parameters = self.speaker_handler.parameters() + self.main_model.parameters()
+        parameters = list(self.speaker_handler.parameters()) + list(self.main_model.parameters())
         if isinstance(parameters, torch.Tensor):
             parameters = [parameters]
         parameters = [p for p in parameters if p.grad is not None]

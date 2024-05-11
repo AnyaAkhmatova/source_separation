@@ -4,6 +4,7 @@ tqdm
 matplotlib
 pandas
 
+torchvision==0.16.1
 torchaudio==2.1.1
 pesq
 pystoi
@@ -18,3 +19,6 @@ hydra-core
 
 sparseml
 deepsparse
+
+onnx
+onnxruntime

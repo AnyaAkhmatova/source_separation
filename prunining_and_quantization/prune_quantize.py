@@ -1,3 +1,4 @@
+import os
 import logging 
 import warnings
 
@@ -9,6 +10,8 @@ from torch.nn import DataParallel
 
 from sparseml.pytorch.optim import ScheduledModifierManager
 from sparseml.pytorch.utils import ModuleExporter, get_prunable_layers, tensor_sparsity
+
+import onnxruntime
 
 import hydra
 from hydra.core.hydra_config import HydraConfig
@@ -106,6 +109,7 @@ def run_training(config, save_dir, logger):
 
     manager1.finalize(speaker_handler)
     manager2.finalize(main_model)
+    
     logger.info("speaker_handler sparsity:")
     for (name, layer) in get_prunable_layers(speaker_handler):
         logger.info(f"{name}.weight: {tensor_sparsity(layer.weight).item():.4f}")
@@ -115,23 +119,58 @@ def run_training(config, save_dir, logger):
 
     speaker_handler.eval()
     main_model.eval()
+
+    logger.info("export speaker handler")
     exporter1 = ModuleExporter(speaker_handler, output_dir=save_dir)
     exporter1.export_pytorch(name=config["speaker_handler_name"]+".pth")
-    exporter1.export_onnx((torch.randn(1, 160000),), 
+    exporter1.export_onnx((torch.randn(1, 160000), ), 
                           name="sparse_"+config["speaker_handler_name"]+".onnx", 
                           convert_qat=True,
                           input_names=["ref"], 
                           output_names=["ref_vec", "speaker_logits"], 
-                          dynamic_axes={"ref": [1]})
+                          dynamic_axes={"ref": {1: "ref_length"}})
+    
+    logger.info("export main model")
     exporter2 = ModuleExporter(main_model, output_dir=save_dir)
     exporter2.export_pytorch(name=config["main_model_name"]+".pth")
     exporter2.export_onnx((torch.randn(1, config["streamer"]["chunk_window"]), 
                            torch.randn(1, config["main_model"]["out_channels"]), 
-                           torch.randn(1, config["main_model"]["memory_size"], config["streamer"]["chunk_window"])), 
+                           torch.randn(1, config["main_model"]["memory_size"], config["time_dim"])), 
                           name="sparse_"+config["main_model_name"]+".onnx", 
                           convert_qat=True,
                           input_names=["chunk", "ref_vec", "memory"], 
                           output_names=["s1_chunk", "new_memory"])
+    
+    batch = dataloaders["dev"].dataset[0]
+
+    def to_numpy(tensor):
+        return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+
+    model = speaker_handler.module.to("cpu")
+    model_input = (batch["ref"], )
+    model_ref_vec, model_logits = model(*model_input)
+
+    ort_session = onnxruntime.InferenceSession(os.path.join(save_dir, "sparse_"+config["speaker_handler_name"]+".onnx"), 
+                                               providers=['CPUExecutionProvider'])
+    onnxruntime_input = {k.name: to_numpy(v) for k, v in zip(ort_session.get_inputs(), model_input)}
+    onnxruntime_ref_vec, onnxruntime_logits = ort_session.run(None, onnxruntime_input)
+
+    assert torch.allclose(model_ref_vec, torch.tensor(onnxruntime_ref_vec), rtol=1e-3, atol=1e-3)
+    assert torch.allclose(model_logits, torch.tensor(onnxruntime_logits), rtol=1e-3, atol=1e-3)
+
+    model = main_model.module.to("cpu")
+    model_input = (batch["mix"][:, : config["streamer"]["chunk_window"]], 
+                   model_ref_vec, 
+                   torch.zeros((1, config["main_model"]["memory_size"], config["time_dim"])))
+    model_s1, model_memory = model(*model_input)
+
+    ort_session = onnxruntime.InferenceSession(os.path.join(save_dir, "sparse_"+config["main_model_name"]+".onnx"), 
+                                               providers=['CPUExecutionProvider'])
+    onnxruntime_input = {k.name: to_numpy(v) for k, v in zip(ort_session.get_inputs(), model_input)}
+    onnxruntime_s1, onnxruntime_memory = ort_session.run(None, onnxruntime_input)
+
+    assert torch.allclose(model_s1, torch.tensor(onnxruntime_s1), rtol=1e-3, atol=1e-3)
+    assert torch.allclose(model_memory, torch.tensor(onnxruntime_memory), rtol=1e-3, atol=1e-3)
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")

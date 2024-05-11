@@ -9,7 +9,7 @@ final_lr: 5e-5
 
 # Pruning hyperparams
 init_sparsity: 0.05
-final_sparsity: 0.8
+final_sparsity: 0.5
 
 # Stabalization Stage
 training_modifiers:
