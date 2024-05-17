@@ -21,4 +21,9 @@ sparseml
 deepsparse
 
 onnx
-onnxruntime
+# onnxruntime
+onnxruntime-gpu
+
+onnx_opcounter
+thop
+

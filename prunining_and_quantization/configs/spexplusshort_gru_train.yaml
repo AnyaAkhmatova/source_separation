@@ -2,10 +2,12 @@ name: "spexplusshort_gru_sparsification"
 wandb_project: "ss"
 n_gpu: 1
 resume: "./model_best_gru_cont2.pth"
-recipe_path: "./prunining_and_quantization/recipes/recipe.yaml"
+recipe_path: "./prunining_and_quantization/recipes/recipe0.yaml"
 speaker_handler_name: "speaker_handler"
 main_model_name: "main_model"
 time_dim: 239
+prune: False
+quantize: True
 dataset:
   sr: 16000
   train:

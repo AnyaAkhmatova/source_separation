@@ -1,0 +1,34 @@
+speaker_handler_path: "speaker_handler.onnx"
+main_model_path: "main_model.onnx"
+num_iters: 100
+mode: "gpu"
+time_dim: 239
+dataset:
+  sr: 16000
+  test:
+    root: "./data/ss_dataset"
+    part: "test"
+    batch_size: 1
+    max_length: 3000
+    num_workers: 8
+    pin_memory: False
+streamer:
+  chunk_window: 4800
+  chunk_step: 2400
+  overlap_add_method: "half"
+speaker_handler:
+  n_channels: 256
+  out_channels: 100
+  short_kernel: 40
+  n_resnetblocks: 3
+  n_speakers: 256
+main_model:
+  n_channels: 256
+  hidden_channels: 512
+  out_channels: 100
+  short_kernel: 40
+  n_stacked_tcnblocks: 4
+  n_tcnblocks: 6
+  causal: False
+  memory_size: 128
+

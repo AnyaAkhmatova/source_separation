@@ -1,0 +1,42 @@
+name: "spexplusshort_gru_sparsification_test"
+wandb_project: "ss"
+speaker_handler_path: "speaker_handler.onnx"
+main_model_path: "main_model.onnx"
+n_gpu: 1
+sr: 16000
+log_step: 250
+save_inference: True
+save_dir: "inference_results"
+time_dim: 239
+dataset:
+  sr: 16000
+  inference:
+    root: "./data/ss_dataset"
+    part: "test"
+    max_length: 3000
+    test_mode: False
+    num_workers: 8
+streamer:
+  chunk_window: 4800
+  chunk_step: 2400
+  overlap_add_method: "half"
+speaker_handler:
+  n_channels: 256
+  out_channels: 100
+  short_kernel: 40
+  n_resnetblocks: 3
+  n_speakers: 256
+main_model:
+  n_channels: 256
+  hidden_channels: 512
+  out_channels: 100
+  short_kernel: 40
+  n_stacked_tcnblocks: 4
+  n_tcnblocks: 6
+  causal: False
+  memory_size: 128
+loss:
+  type: "SpexPlusShortLoss"
+  args: {}
+metrics: []
+

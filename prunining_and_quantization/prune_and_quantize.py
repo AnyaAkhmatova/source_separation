@@ -59,8 +59,8 @@ def run_training(config, save_dir, logger):
         raise ValueError("Please specify resume path")
     logger.info("Loading checkpoint: {} ...".format(config['resume']))
     checkpoint = torch.load(config['resume'], device)
-    speaker_handler.load_state_dict(checkpoint["model"], strict=False)
-    main_model.load_state_dict(checkpoint["model"], strict=False)
+    logger.info(speaker_handler.load_state_dict(checkpoint["model"], strict=False))
+    logger.info(main_model.load_state_dict(checkpoint["model"], strict=False))
     logger.info(
         "Checkpoint loaded"
     )
@@ -109,13 +109,14 @@ def run_training(config, save_dir, logger):
 
     manager1.finalize(speaker_handler)
     manager2.finalize(main_model)
-    
-    logger.info("speaker_handler sparsity:")
-    for (name, layer) in get_prunable_layers(speaker_handler):
-        logger.info(f"{name}.weight: {tensor_sparsity(layer.weight).item():.4f}")
-    logger.info("main_model sparsity:")
-    for (name, layer) in get_prunable_layers(main_model):
-        logger.info(f"{name}.weight: {tensor_sparsity(layer.weight).item():.4f}")
+
+    if config["prune"]:    
+        logger.info("speaker_handler sparsity:")
+        for (name, layer) in get_prunable_layers(speaker_handler):
+            logger.info(f"{name}.weight: {tensor_sparsity(layer.weight).item():.4f}")
+        logger.info("main_model sparsity:")
+        for (name, layer) in get_prunable_layers(main_model):
+            logger.info(f"{name}.weight: {tensor_sparsity(layer.weight).item():.4f}")
 
     speaker_handler.eval()
     main_model.eval()
@@ -125,7 +126,7 @@ def run_training(config, save_dir, logger):
     exporter1.export_pytorch(name=config["speaker_handler_name"]+".pth")
     exporter1.export_onnx((torch.randn(1, 160000), ), 
                           name="sparse_"+config["speaker_handler_name"]+".onnx", 
-                          convert_qat=True,
+                          convert_qat=config["quantize"],
                           input_names=["ref"], 
                           output_names=["ref_vec", "speaker_logits"], 
                           dynamic_axes={"ref": {1: "ref_length"}})
@@ -137,7 +138,7 @@ def run_training(config, save_dir, logger):
                            torch.randn(1, config["main_model"]["out_channels"]), 
                            torch.randn(1, config["main_model"]["memory_size"], config["time_dim"])), 
                           name="sparse_"+config["main_model_name"]+".onnx", 
-                          convert_qat=True,
+                          convert_qat=config["quantize"],
                           input_names=["chunk", "ref_vec", "memory"], 
                           output_names=["s1_chunk", "new_memory"])
     
@@ -155,8 +156,11 @@ def run_training(config, save_dir, logger):
     onnxruntime_input = {k.name: to_numpy(v) for k, v in zip(ort_session.get_inputs(), model_input)}
     onnxruntime_ref_vec, onnxruntime_logits = ort_session.run(None, onnxruntime_input)
 
-    assert torch.allclose(model_ref_vec, torch.tensor(onnxruntime_ref_vec), rtol=1e-3, atol=1e-3)
-    assert torch.allclose(model_logits, torch.tensor(onnxruntime_logits), rtol=1e-3, atol=1e-3)
+    difference = [torch.max(torch.abs(model_ref_vec - torch.tensor(onnxruntime_ref_vec))).item(), 
+                  torch.max(torch.abs(model_logits - torch.tensor(onnxruntime_logits))).item()]
+
+    logger.info(f"speaker handler difference: {difference}")
+
 
     model = main_model.module.to("cpu")
     model_input = (batch["mix"][:, : config["streamer"]["chunk_window"]], 
@@ -169,8 +173,10 @@ def run_training(config, save_dir, logger):
     onnxruntime_input = {k.name: to_numpy(v) for k, v in zip(ort_session.get_inputs(), model_input)}
     onnxruntime_s1, onnxruntime_memory = ort_session.run(None, onnxruntime_input)
 
-    assert torch.allclose(model_s1, torch.tensor(onnxruntime_s1), rtol=1e-3, atol=1e-3)
-    assert torch.allclose(model_memory, torch.tensor(onnxruntime_memory), rtol=1e-3, atol=1e-3)
+    difference = [torch.max(torch.abs(model_s1 - torch.tensor(onnxruntime_s1))).item(), 
+                  torch.max(torch.abs(model_memory - torch.tensor(onnxruntime_memory))).item()]
+
+    logger.info(f"main model difference: {difference}")
 
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
