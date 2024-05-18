@@ -114,7 +114,7 @@ class SimpleShortCausalTrainer:
 
                 self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + batch_idx // self.grad_accum_step)
                 self.writer.add_scalar(
-                    "learning rate", self.optimizer1.state_dict()['param_groups'][0]['lr']
+                    "learning rate", self.optimizer.state_dict()['param_groups'][0]['lr']
                 )
                 self._log_scalars(cur_result)
                 self._log_sample(batch)
