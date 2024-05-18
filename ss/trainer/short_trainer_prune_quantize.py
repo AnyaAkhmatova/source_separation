@@ -177,9 +177,8 @@ class SimpleShortCausalTrainer:
             if batch_idx % self.grad_accum_step == 0:
                 self.optimizer.zero_grad(set_to_none=True)
 
-            with torch.no_grad():
-                batch["ref_vec"], batch["logits"] = self.speaker_handler(batch["ref"])
             with torch.cuda.amp.autocast():
+                batch["ref_vec"], batch["logits"] = self.speaker_handler(batch["ref"])
                 batch["s1"] = []
                 memory = torch.zeros((batch_size, self.config["main_model"]["memory_size"], self.config["time_dim"]), 
                                         dtype=torch.float32, device=self.device)
