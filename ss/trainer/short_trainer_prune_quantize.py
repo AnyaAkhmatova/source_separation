@@ -2,6 +2,7 @@ import numpy as np
 from tqdm import tqdm
 
 import torch
+import torch.distributed as dist
 from torch.nn.utils import clip_grad_norm_
 
 from ss.utils import MetricTracker
@@ -11,6 +12,8 @@ from ss.wandb import WanDBWriter
 
 class SimpleShortCausalTrainer:
     def __init__(self,
+                 rank, 
+                 world_size,
                  speaker_handler, 
                  main_model,
                  criterion,
@@ -20,20 +23,24 @@ class SimpleShortCausalTrainer:
                  logger,
                  device,
                  dataloaders,
+                 samplers,
                  streamer,
                  len_epoch=None,
                  additional_steps=0,
                  skip_oom=True):
+        self.rank = rank
+        self.world_size = world_size
         self.speaker_handler = speaker_handler
         self.main_model = main_model
         self.criterion = criterion
         self.metrics = metrics
         self.optimizer = optimizer
         self.config = config
-        self.logger = logger
-        self.writer = WanDBWriter(
-            config, self.logger
-        )
+        if rank == 0:
+            self.logger = logger
+            self.writer = WanDBWriter(
+                config, self.logger
+            )
         self.device = device
         self.additional_steps = additional_steps
         self.skip_oom = skip_oom
@@ -41,7 +48,9 @@ class SimpleShortCausalTrainer:
         self.epochs = config["trainer"]["epochs"]
         
         self.train_dataloader = dataloaders["train"]        
+        self.train_sampler = samplers["train"]
         self.evaluation_dataloaders = {k: v for k, v in dataloaders.items() if k != "train"}
+        self.evaluation_samplers = {k: v for k, v in samplers.items() if k != "train"}
         self.streamer = streamer
 
         self.batch_size = self.config["trainer"]["batch_size"]
@@ -69,21 +78,37 @@ class SimpleShortCausalTrainer:
 
     def train(self):
         for epoch in range(1, self.epochs + 1):
-            log = self._train_epoch(epoch)
-            log["epoch"] = epoch
-            for key, value in log.items():
-                self.logger.info("    {:15s}: {}".format(str(key), value))
+            result = self._train_epoch(epoch)
+
+            result_keys = list(result.keys())
+            result_tensor = []
+            for key in result_keys:
+                result_tensor.append(float(result[key]))
+            
+            result_tensor = torch.tensor(result_tensor, dtype=torch.float32, device=self.device)
+            dist.all_reduce(result_tensor, op=dist.ReduceOp.SUM)
+            result_tensor /= self.world_size
+
+            log = {"epoch": epoch}
+            for i, key in enumerate(result_keys):
+                log[key] = result_tensor[i].item()
+
+            if self.rank == 0:
+                for key, value in log.items():
+                    self.logger.info("    {:15s}: {}".format(str(key), value))
 
     def _train_epoch(self, epoch):
         self.mode = "train"
         self.main_model.train()
         self.train_metrics.reset()
+        self.train_sampler.set_epoch(epoch)
 
-        self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + self.additional_steps)
-        self.writer.add_scalar("epoch", epoch)
+        if self.rank == 0:
+            self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + self.additional_steps)
+            self.writer.add_scalar("epoch", epoch)
 
         for batch_idx, batch in enumerate(
-                tqdm(self.train_dataloader, desc="train", total=self.len_epoch)
+                tqdm(self.train_dataloader, desc="train", total=self.len_epoch) if self.rank == 0 else self.train_dataloader
         ):
             try:
                 batch = self.process_batch(
@@ -94,7 +119,8 @@ class SimpleShortCausalTrainer:
                 )
             except RuntimeError as e:
                 if "out of memory" in str(e) and self.skip_oom:
-                    self.logger.warning("OOM on batch. Skipping batch.")
+                    if self.rank == 0:
+                        self.logger.warning("OOM on batch. Skipping batch.")
                     for p in self.main_model.parameters():
                         if p.grad is not None:
                             del p.grad
@@ -105,23 +131,29 @@ class SimpleShortCausalTrainer:
             self.train_metrics.update("grad norm", self.get_grad_norm().item())
 
             if batch_idx % self.log_step == 0 or batch_idx == self.len_epoch - 1:
-                self.logger.debug(
-                    "Train Epoch: {} {} Loss: {:.6f} SISDR: {:.4f} ACC: {:.4f}".format(
-                        epoch, self._progress(batch_idx), 
-                        batch["loss"].item(), batch["sisdr"].item(), batch["acc"].item()
+                log_tensor = torch.tensor([batch["loss"], batch["sisdr"], batch["acc"]], dtype=torch.float32, device=self.device)
+                dist.all_reduce(log_tensor, op=dist.ReduceOp.SUM)
+                log_tensor /= self.world_size
+
+                if self.rank == 0:
+                    self.logger.debug(
+                        "Train Epoch: {} {} Loss: {:.6f} SISDR: {:.4f} ACC: {:.4f}".format(
+                            epoch, self._progress(batch_idx), 
+                            log_tensor[0].item(), log_tensor[1].item(), log_tensor[2].item()
+                        )
                     )
-                )
                 
-                cur_result = self.train_metrics.result()
+                cur_result = self.train_metrics.result_sync()
 
-                self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + batch_idx // self.grad_accum_step + self.additional_steps)
-                self.writer.add_scalar(
-                    "learning rate", self.optimizer.state_dict()['param_groups'][0]['lr']
-                )
-                self._log_scalars(cur_result)
-                self._log_sample(batch)
+                if self.rank == 0:
+                    self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + batch_idx // self.grad_accum_step + self.additional_steps)
+                    self.writer.add_scalar(
+                        "learning rate", self.optimizer.state_dict()['param_groups'][0]['lr']
+                    )
+                    self._log_scalars(cur_result)
+                    self._log_sample(batch)
 
-                last_train_metrics = cur_result
+                last_train_metrics = self.train_metrics.result()
                 self.train_metrics.reset()
 
         log = last_train_metrics
@@ -136,10 +168,11 @@ class SimpleShortCausalTrainer:
         self.mode = "eval"
         self.main_model.eval()
         self.evaluation_metrics.reset()
+        self.evaluation_samplers[part].set_epoch(epoch)
 
         with torch.no_grad():
             for batch in (
-                tqdm(dataloader, desc=part, total=len(dataloader))
+                tqdm(dataloader, desc=part, total=len(dataloader)) if self.rank == 0 else dataloader
             ):
                 batch = self.process_batch(
                     batch,
@@ -147,13 +180,14 @@ class SimpleShortCausalTrainer:
                     metric_names=self.eval_metrics_names
                 )
             
-            cur_result = self.evaluation_metrics.result()
+            cur_result = self.evaluation_metrics.result_sync()
 
-            self.writer.set_step(epoch * (self.len_epoch // self.grad_accum_step) + self.additional_steps, part)
-            self._log_scalars(cur_result)
-            self._log_sample(batch)
+            if self.rank == 0:
+                self.writer.set_step(epoch * (self.len_epoch // self.grad_accum_step) + self.additional_steps, part)
+                self._log_scalars(cur_result)
+                self._log_sample(batch)
 
-        return cur_result
+        return self.evaluation_metrics.result()
     
     @staticmethod
     def move_batch_to_device(batch, device):
