@@ -51,7 +51,7 @@ def run_training(config, save_dir, logger):
 
     logger.info(speaker_handler)
     logger.info(main_model)
-    logger.info("n_speakers: " + str(dataloaders["train"].dataset.n_speakers))
+    logger.info("n_speakers: " + str(config["dataset"]["train"]["n_speakers"]))
 
     if config.get('resume') is None:
         raise ValueError("Please specify resume path")
