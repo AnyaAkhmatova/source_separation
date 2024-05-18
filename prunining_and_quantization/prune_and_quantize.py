@@ -122,7 +122,7 @@ def run_training(config, save_dir, logger):
         trainable_params = filter(lambda p: p.requires_grad, main_model.parameters())
         optimizer = init_obj(config["optimizer"], torch.optim, trainable_params)
 
-        manager = ScheduledModifierManager.from_yaml(config["quntize_recipe_path"])
+        manager = ScheduledModifierManager.from_yaml(config["quantize_recipe_path"])
         optimizer = manager.modify(main_model, optimizer, 
                         steps_per_epoch=(
                             len(dataloaders["train"]) // \
