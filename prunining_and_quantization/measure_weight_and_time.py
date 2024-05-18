@@ -192,7 +192,10 @@ def run(config, logger, device):
     mean_mix_length = np.array(mix_lengths).mean()
     mean_ref_length = np.array(ref_lengths).mean()
     mean_chunks_num = np.array(chunks_nums).mean()
-    logger.info(f"Average {config["mode"]} time per sample (s): {mean_time}")
+    if gpu:
+        logger.info(f"Average gpu time per sample (s): {mean_time}")
+    else:
+        logger.info(f"Average cpu time per sample (s): {mean_time}")
     logger.info(f"Average mix length (s): {mean_mix_length}")
     logger.info(f"Average ref length (s): {mean_ref_length}")
     logger.info(f"Average number of chunks: {mean_chunks_num}")

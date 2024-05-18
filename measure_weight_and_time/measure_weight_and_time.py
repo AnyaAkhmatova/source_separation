@@ -1,11 +1,11 @@
+import gc
+from time import time
 import logging 
 import warnings
-import gc
 
 import numpy as np
 import random
 from tqdm import tqdm
-from time import time
 
 import torch
 
@@ -23,8 +23,8 @@ warnings.filterwarnings("ignore")
 
 SEED = 42
 torch.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = True
+# torch.backends.cudnn.deterministic = True
+# torch.backends.cudnn.benchmark = True
 np.random.seed(SEED)
 random.seed(SEED)
 
@@ -44,7 +44,7 @@ def end_timer(gpu):
         torch.cuda.synchronize()
     end_time = time()
     if gpu:
-        memory_used = torch.cuda.max_memory_allocated() // 1_000_000
+        memory_used = torch.cuda.max_memory_allocated() // 2**20
         return end_time, memory_used
     return end_time
 
@@ -55,6 +55,8 @@ def run(config, logger, device):
     assert config["dataset"]["test"]["batch_size"] == 1, "batch_size must be 1"
 
     streamer = Streamer(**config["streamer"])
+
+    gpu = (config["mode"] == "gpu")
 
     model = init_obj(config["arch"], module_arch)
     model.to(device)
@@ -77,18 +79,16 @@ def run(config, logger, device):
         "Checkpoint loaded"
     )
 
-    model_total_params = sum(p.numel() for p in model.parameters())
+    model_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info("Number of model's parameters: " + str(model_total_params))
 
     model = model.to("cpu")
     batch = dataloader.dataset[0]
-    mix, ref = batch["mix"], batch["ref"]
+    mix, ref = batch["mix"][:, :config["dataset"]["sr"]*1], batch["ref"][:, :config["dataset"]["sr"]*2]
     mix_chunks, n_chunks = streamer.make_chunks(mix)
     macs, params = profile(model, inputs=(mix_chunks, ref, False))
-    logger.info("macs and params: {macs}, {params}")
+    logger.info(f"macs and params: {macs/1e9}, {params}")
     model = model.to(device)
-
-    gpu = (config["mode"] == "gpu")
 
     num_iters = config["num_iters"]
     times = []
@@ -130,9 +130,11 @@ def run(config, logger, device):
     mean_mix_length = np.array(mix_lengths).mean()
     mean_ref_length = np.array(ref_lengths).mean()
     mean_chunks_num = np.array(chunks_nums).mean()
-    logger.info(f"Average {config["mode"]} time per sample (s): {mean_time}")
     if gpu:
-        logger.info(f"Average gpu memory used per sample (s): {mean_memory}")
+        logger.info(f"Average gpu time per sample (s): {mean_time}")
+        logger.info(f"Average gpu memory used per sample (Mb): {mean_memory}")
+    else:
+        logger.info(f"Average cpu time per sample (s): {mean_time}")
     logger.info(f"Average mix length (s): {mean_mix_length}")
     logger.info(f"Average ref length (s): {mean_ref_length}")
     logger.info(f"Average number of chunks: {mean_chunks_num}")

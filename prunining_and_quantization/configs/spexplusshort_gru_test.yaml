@@ -1,8 +1,7 @@
-name: "spexplusshort_gru_sparsification_test"
-wandb_project: "ss"
+name: "spexplusshort_gru_quant_test"
+wandb_project: "online_target_source_separation"
 speaker_handler_path: "speaker_handler.onnx"
 main_model_path: "main_model.onnx"
-n_gpu: 1
 sr: 16000
 log_step: 250
 time_dim: 239
@@ -13,7 +12,7 @@ dataset:
     part: "test"
     batch_size: 1
     max_length: 3000
-    num_workers: 1
+    num_workers: 8
     pin_memory: False
 streamer:
   chunk_window: 4800

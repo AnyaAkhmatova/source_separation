@@ -1,0 +1,63 @@
+name: "spexplusshort_gru_quant"
+wandb_project: "online_target_source_separation"
+n_gpu: 2
+resume: "./model_best.pth"
+recipe_path: "./prunining_and_quantization/recipes/recipe_quant.yaml"
+speaker_handler_name: "speaker_handler"
+main_model_name: "main_model"
+time_dim: 239
+prune: False
+quantize: True
+dataset:
+  sr: 16000
+  train:
+    root: "./data/ss_dataset"
+    part: "train"
+    batch_size: 4
+    n_speakers: 256
+    max_length: 20000
+    num_workers: 8
+    pin_memory: True
+  dev:
+    root: "./data/ss_dataset"
+    part: "dev"
+    batch_size: 4
+    max_length: 5000
+    num_workers: 8
+    pin_memory: True
+streamer:
+  chunk_window: 4800
+  chunk_step: 2400
+  overlap_add_method: "half"
+speaker_handler:
+  n_channels: 256
+  out_channels: 100
+  short_kernel: 40
+  n_resnetblocks: 3
+  n_speakers: 256
+main_model:
+  n_channels: 256
+  hidden_channels: 512
+  out_channels: 100
+  short_kernel: 40
+  n_stacked_tcnblocks: 4
+  n_tcnblocks: 6
+  causal: False
+  memory_size: 128
+optimizer:
+  type: "Adam"
+  args:
+    lr: 0.0001
+    weight_decay: 0
+loss:
+  type: "SpexPlusShortLoss"
+  args: {}
+metrics:
+  - type: "ACC"
+    args: {}
+train_metrics: ["ACC"]
+dev_metrics: []
+trainer:
+  batch_size: 16
+  epochs: 2
+  grad_norm_clip: 1000

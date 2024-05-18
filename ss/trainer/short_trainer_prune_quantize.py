@@ -15,8 +15,7 @@ class SimpleShortCausalTrainer:
                  main_model,
                  criterion,
                  metrics,
-                 optimizer1,
-                 optimizer2,
+                 optimizer,
                  config,
                  logger,
                  device,
@@ -28,8 +27,7 @@ class SimpleShortCausalTrainer:
         self.main_model = main_model
         self.criterion = criterion
         self.metrics = metrics
-        self.optimizer1 = optimizer1
-        self.optimizer2 = optimizer2
+        self.optimizer = optimizer
         self.config = config
         self.logger = logger
         self.writer = WanDBWriter(
@@ -63,6 +61,9 @@ class SimpleShortCausalTrainer:
         )
 
         self.mode = "train"
+        self.speaker_handler.eval()
+        self.main_model.train()
+        self.scaler = torch.cuda.amp.GradScaler()
 
     def train(self):
         for epoch in range(1, self.epochs + 1):
@@ -73,7 +74,6 @@ class SimpleShortCausalTrainer:
 
     def _train_epoch(self, epoch):
         self.mode = "train"
-        self.speaker_handler.train()
         self.main_model.train()
         self.train_metrics.reset()
 
@@ -93,9 +93,6 @@ class SimpleShortCausalTrainer:
             except RuntimeError as e:
                 if "out of memory" in str(e) and self.skip_oom:
                     self.logger.warning("OOM on batch. Skipping batch.")
-                    for p in self.speaker_handler.parameters():
-                        if p.grad is not None:
-                            del p.grad
                     for p in self.main_model.parameters():
                         if p.grad is not None:
                             del p.grad
@@ -135,7 +132,6 @@ class SimpleShortCausalTrainer:
     
     def _evaluation_epoch(self, epoch, part, dataloader):
         self.mode = "eval"
-        self.speaker_handler.eval()
         self.main_model.eval()
         self.evaluation_metrics.reset()
 
@@ -166,9 +162,6 @@ class SimpleShortCausalTrainer:
     def _clip_grad_norm(self):
         if self.config["trainer"].get("grad_norm_clip", None) is not None:
             clip_grad_norm_(
-                self.speaker_handler.parameters(), self.config["trainer"]["grad_norm_clip"]
-            )
-            clip_grad_norm_(
                 self.main_model.parameters(), self.config["trainer"]["grad_norm_clip"]
             )
 
@@ -182,30 +175,32 @@ class SimpleShortCausalTrainer:
             batch = self.move_batch_to_device(batch, self.device)
 
             if batch_idx % self.grad_accum_step == 0:
-                self.optimizer1.zero_grad(set_to_none=True)
-                self.optimizer2.zero_grad(set_to_none=True)
+                self.optimizer.zero_grad(set_to_none=True)
 
-            batch["ref_vec"], batch["logits"] = self.speaker_handler(batch["ref"])
-            batch["s1"] = []
-            memory = torch.zeros((batch_size, self.config["main_model"]["memory_size"], self.config["time_dim"]), 
-                                    dtype=torch.float32, device=self.device)
-            for i in range(n_chunks):
-                chunk = batch["mix_chunks"][i * batch_size: (i + 1) * batch_size]
-                s1_chunk, memory = self.main_model(chunk, batch["ref_vec"], memory)
-                batch["s1"].append(s1_chunk)
-            batch["s1"] = torch.cat(batch["s1"], dim=0)
-            length = batch["target"].shape[-1]
-            batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
-            batch["s1"] = batch["s1"][:, :length]
-            
-            batch["loss"], batch["sisdr"] = self.criterion(**batch, have_relevant_speakers=have_relevant_speakers)
+            with torch.no_grad():
+                batch["ref_vec"], batch["logits"] = self.speaker_handler(batch["ref"])
+            with torch.cuda.amp.autocast():
+                batch["s1"] = []
+                memory = torch.zeros((batch_size, self.config["main_model"]["memory_size"], self.config["time_dim"]), 
+                                        dtype=torch.float32, device=self.device)
+                for i in range(n_chunks):
+                    chunk = batch["mix_chunks"][i * batch_size: (i + 1) * batch_size]
+                    s1_chunk, memory = self.main_model(chunk, batch["ref_vec"], memory)
+                    batch["s1"].append(s1_chunk)
+                batch["s1"] = torch.cat(batch["s1"], dim=0)
+                length = batch["target"].shape[-1]
+                batch["s1"] = self.streamer.apply_overlap_add_method(batch["s1"], n_chunks)
+                batch["s1"] = batch["s1"][:, :length]
+                
+                batch["loss"], batch["sisdr"] = self.criterion(**batch, have_relevant_speakers=have_relevant_speakers)
 
-            (batch["loss"] / self.grad_accum_step).backward()
+            self.scaler.scale(batch["loss"] / self.grad_accum_step).backward()
 
-            if (batch_idx + 1) % self.grad_accum_step == 0:
+            if (batch_idx + 1) % self.grad_accum_step == 0:                
+                self.scaler.unscale_(self.optimizer)
                 self._clip_grad_norm()
-                self.optimizer1.step()
-                self.optimizer2.step()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
 
         else:
             batch["mix_chunks"], n_chunks = self.streamer.make_chunks(batch["mix"])
@@ -238,7 +233,7 @@ class SimpleShortCausalTrainer:
     
     @torch.no_grad()
     def get_grad_norm(self, norm_type=2):
-        parameters = list(self.speaker_handler.parameters()) + list(self.main_model.parameters())
+        parameters = list(self.main_model.parameters())
         if isinstance(parameters, torch.Tensor):
             parameters = [parameters]
         parameters = [p for p in parameters if p.grad is not None]

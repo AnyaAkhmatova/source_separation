@@ -1,29 +1,29 @@
-name: "spexplusshort_gru_sparsification"
-wandb_project: "ss"
-n_gpu: 1
-resume: "./model_best_gru_cont2.pth"
-recipe_path: "./prunining_and_quantization/recipes/recipe0.yaml"
+name: "spexplusshort_gru_prune_30_quant"
+wandb_project: "online_target_source_separation"
+n_gpu: 2
+resume: "./model_best.pth"
+recipe_path: "./prunining_and_quantization/recipes/recipe_prune_30_quant.yaml"
 speaker_handler_name: "speaker_handler"
 main_model_name: "main_model"
 time_dim: 239
-prune: False
+prune: True
 quantize: True
 dataset:
   sr: 16000
   train:
     root: "./data/ss_dataset"
     part: "train"
-    batch_size: 2
+    batch_size: 4
     n_speakers: 256
-    max_length: 4
-    num_workers: 1
+    max_length: 20000
+    num_workers: 8
     pin_memory: True
   dev:
     root: "./data/ss_dataset"
     part: "dev"
-    batch_size: 2
-    max_length: 4
-    num_workers: 1
+    batch_size: 4
+    max_length: 5000
+    num_workers: 8
     pin_memory: True
 streamer:
   chunk_window: 4800
@@ -58,6 +58,6 @@ metrics:
 train_metrics: ["ACC"]
 dev_metrics: []
 trainer:
-  batch_size: 2
-  epochs: 3
+  batch_size: 16
+  epochs: 8
   grad_norm_clip: 1000

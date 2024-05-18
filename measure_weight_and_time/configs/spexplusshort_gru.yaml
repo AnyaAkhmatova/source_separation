@@ -1,6 +1,6 @@
 resume: "./model_best_gru_cont2.pth"
-num_iters: 100
-mode: "cpu"
+num_iters: 10
+mode: "gpu"
 dataset:
   sr: 16000
   test:
@@ -8,7 +8,7 @@ dataset:
     part: "test"
     batch_size: 1
     max_length: 3000
-    num_workers: 8
+    num_workers: 1
     pin_memory: False
 streamer:
   chunk_window: 4800

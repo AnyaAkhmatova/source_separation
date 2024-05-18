@@ -20,8 +20,6 @@ hydra-core
 sparseml
 deepsparse
 
-onnx
-# onnxruntime
 onnxruntime-gpu
 
 onnx_opcounter

@@ -6,6 +6,7 @@ import numpy as np
 import random
 
 import torch
+from torch import nn
 from torch.nn import DataParallel
 
 from sparseml.pytorch.optim import ScheduledModifierManager
@@ -47,6 +48,7 @@ def run_training(config, save_dir, logger):
     speaker_handler = SpexPlusShortSpeakerHandler(**config["speaker_handler"])
     speaker_handler = speaker_handler.to(device)
     speaker_handler = DataParallel(speaker_handler, device_ids=list_ids)
+
     main_model = SpexPlusShortGRUMainModel(**config["main_model"])
     main_model = main_model.to(device)
     main_model = DataParallel(main_model, device_ids=list_ids)
@@ -59,11 +61,14 @@ def run_training(config, save_dir, logger):
         raise ValueError("Please specify resume path")
     logger.info("Loading checkpoint: {} ...".format(config['resume']))
     checkpoint = torch.load(config['resume'], device)
-    logger.info(speaker_handler.load_state_dict(checkpoint["model"], strict=False))
-    logger.info(main_model.load_state_dict(checkpoint["model"], strict=False))
+    speaker_handler.load_state_dict(checkpoint["model"], strict=False)
+    main_model.load_state_dict(checkpoint["model"], strict=False)
     logger.info(
         "Checkpoint loaded"
     )
+
+    speaker_handler.eval()
+    main_model.train()
     
     criterion = init_obj(config["loss"], module_loss).to(device)
     metrics = [
@@ -72,20 +77,11 @@ def run_training(config, save_dir, logger):
     ]
     metrics = {met.name: met for met in metrics}
 
-    trainable_params1 = filter(lambda p: p.requires_grad, speaker_handler.parameters())
-    optimizer1 = init_obj(config["optimizer"], torch.optim, trainable_params1)
-    trainable_params2 = filter(lambda p: p.requires_grad, main_model.parameters())
-    optimizer2 = init_obj(config["optimizer"], torch.optim, trainable_params2)
+    trainable_params = filter(lambda p: p.requires_grad, main_model.parameters())
+    optimizer = init_obj(config["optimizer"], torch.optim, trainable_params)
 
-    manager1 = ScheduledModifierManager.from_yaml(config["recipe_path"])
-    optimizer1 = manager1.modify(speaker_handler, optimizer1, 
-                    steps_per_epoch=(
-                        len(dataloaders["train"]) // \
-                        (config["trainer"]["batch_size"] // config["dataset"]["train"]["batch_size"])
-                    )
-                )
-    manager2 = ScheduledModifierManager.from_yaml(config["recipe_path"])
-    optimizer2 = manager2.modify(main_model, optimizer2, 
+    manager = ScheduledModifierManager.from_yaml(config["recipe_path"])
+    optimizer = manager.modify(main_model, optimizer, 
                     steps_per_epoch=(
                         len(dataloaders["train"]) // \
                         (config["trainer"]["batch_size"] // config["dataset"]["train"]["batch_size"])
@@ -96,8 +92,7 @@ def run_training(config, save_dir, logger):
                                        main_model,
                                        criterion,
                                        metrics,
-                                       optimizer1,
-                                       optimizer2,
+                                       optimizer,
                                        config,
                                        logger,
                                        device,
@@ -107,16 +102,15 @@ def run_training(config, save_dir, logger):
 
     trainer.train()
 
-    manager1.finalize(speaker_handler)
-    manager2.finalize(main_model)
+    manager.finalize(main_model)
 
     if config["prune"]:    
-        logger.info("speaker_handler sparsity:")
-        for (name, layer) in get_prunable_layers(speaker_handler):
-            logger.info(f"{name}.weight: {tensor_sparsity(layer.weight).item():.4f}")
         logger.info("main_model sparsity:")
         for (name, layer) in get_prunable_layers(main_model):
             logger.info(f"{name}.weight: {tensor_sparsity(layer.weight).item():.4f}")
+
+    speaker_handler = speaker_handler.module.to("cpu")
+    main_model = main_model.module.to("cpu")
 
     speaker_handler.eval()
     main_model.eval()
@@ -125,8 +119,8 @@ def run_training(config, save_dir, logger):
     exporter1 = ModuleExporter(speaker_handler, output_dir=save_dir)
     exporter1.export_pytorch(name=config["speaker_handler_name"]+".pth")
     exporter1.export_onnx((torch.randn(1, 160000), ), 
-                          name="sparse_"+config["speaker_handler_name"]+".onnx", 
-                          convert_qat=config["quantize"],
+                          name=config["speaker_handler_name"]+".onnx", 
+                          convert_qat=False,
                           input_names=["ref"], 
                           output_names=["ref_vec", "speaker_logits"], 
                           dynamic_axes={"ref": {1: "ref_length"}})
@@ -147,11 +141,11 @@ def run_training(config, save_dir, logger):
     def to_numpy(tensor):
         return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
 
-    model = speaker_handler.module.to("cpu")
+    model = speaker_handler
     model_input = (batch["ref"], )
     model_ref_vec, model_logits = model(*model_input)
 
-    ort_session = onnxruntime.InferenceSession(os.path.join(save_dir, "sparse_"+config["speaker_handler_name"]+".onnx"), 
+    ort_session = onnxruntime.InferenceSession(os.path.join(save_dir, config["speaker_handler_name"]+".onnx"), 
                                                providers=['CPUExecutionProvider'])
     onnxruntime_input = {k.name: to_numpy(v) for k, v in zip(ort_session.get_inputs(), model_input)}
     onnxruntime_ref_vec, onnxruntime_logits = ort_session.run(None, onnxruntime_input)
@@ -161,8 +155,7 @@ def run_training(config, save_dir, logger):
 
     logger.info(f"speaker handler difference: {difference}")
 
-
-    model = main_model.module.to("cpu")
+    model = main_model
     model_input = (batch["mix"][:, : config["streamer"]["chunk_window"]], 
                    model_ref_vec, 
                    torch.zeros((1, config["main_model"]["memory_size"], config["time_dim"])))
