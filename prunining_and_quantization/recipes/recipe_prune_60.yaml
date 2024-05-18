@@ -1,6 +1,6 @@
 # Epoch hyperparams
 stabilization_epochs: 1.0
-pruning_epochs: 4.0
+pruning_epochs: 5.0
 stabilization_epochs2: 1.0
 
 # Learning rate hyperparams
@@ -10,7 +10,7 @@ last_lr: 1e-5
 
 # Pruning hyperparams
 init_sparsity: 0.05
-final_sparsity: 0.3
+final_sparsity: 0.6
 
 # Stabalization Stage
 training_modifiers:

@@ -26,7 +26,6 @@ class SimpleShortCausalTrainer:
                  samplers,
                  streamer,
                  len_epoch=None,
-                 additional_steps=0,
                  skip_oom=True):
         self.rank = rank
         self.world_size = world_size
@@ -42,7 +41,6 @@ class SimpleShortCausalTrainer:
                 config, self.logger
             )
         self.device = device
-        self.additional_steps = additional_steps
         self.skip_oom = skip_oom
 
         self.epochs = config["trainer"]["epochs"]
@@ -104,7 +102,7 @@ class SimpleShortCausalTrainer:
         self.train_sampler.set_epoch(epoch)
 
         if self.rank == 0:
-            self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + self.additional_steps)
+            self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step))
             self.writer.add_scalar("epoch", epoch)
 
         for batch_idx, batch in enumerate(
@@ -146,7 +144,7 @@ class SimpleShortCausalTrainer:
                 cur_result = self.train_metrics.result_sync()
 
                 if self.rank == 0:
-                    self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + batch_idx // self.grad_accum_step + self.additional_steps)
+                    self.writer.set_step((epoch - 1) * (self.len_epoch // self.grad_accum_step) + batch_idx // self.grad_accum_step)
                     self.writer.add_scalar(
                         "learning rate", self.optimizer.state_dict()['param_groups'][0]['lr']
                     )
@@ -183,7 +181,7 @@ class SimpleShortCausalTrainer:
             cur_result = self.evaluation_metrics.result_sync()
 
             if self.rank == 0:
-                self.writer.set_step(epoch * (self.len_epoch // self.grad_accum_step) + self.additional_steps, part)
+                self.writer.set_step(epoch * (self.len_epoch // self.grad_accum_step), part)
                 self._log_scalars(cur_result)
                 self._log_sample(batch)
 

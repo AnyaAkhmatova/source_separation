@@ -5,12 +5,9 @@ resume: "/kaggle/input/gru-best-model/model_best-11.pth"
 speaker_handler_name: "speaker_handler"
 main_model_name: "main_model"
 time_dim: 239
+recipe_path: "./prunining_and_quantization/recipes/recipe_prune_30.yaml"
 prune: True
-prune_epochs: 6
-prune_recipe_path: "./prunining_and_quantization/recipes/recipe_prune_only.yaml"
 quantize: False
-quantize_epochs: 0
-quatize_recipe_path: None
 dataset:
   sr: 16000
   train:
@@ -62,5 +59,5 @@ train_metrics: ["ACC"]
 dev_metrics: []
 trainer:
   batch_size: 16
-  epochs: 0
+  epochs: 7
   grad_norm_clip: 1000
