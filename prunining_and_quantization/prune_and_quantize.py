@@ -39,10 +39,6 @@ random.seed(SEED)
 def run_training(config, save_dir, logger):
     device, list_ids = prepare_device(config["n_gpu"])
 
-    dataloaders = {}
-    dataloaders["train"] = get_simple_dataloader(**config["dataset"]["train"])
-    dataloaders["dev"] = get_simple_dataloader(**config["dataset"]["dev"])
-
     streamer = Streamer(**config["streamer"])
 
     speaker_handler = SpexPlusShortSpeakerHandler(**config["speaker_handler"])
@@ -77,32 +73,79 @@ def run_training(config, save_dir, logger):
     ]
     metrics = {met.name: met for met in metrics}
 
-    trainable_params = filter(lambda p: p.requires_grad, main_model.parameters())
-    optimizer = init_obj(config["optimizer"], torch.optim, trainable_params)
+    additional_steps = 0
 
-    manager = ScheduledModifierManager.from_yaml(config["recipe_path"])
-    optimizer = manager.modify(main_model, optimizer, 
-                    steps_per_epoch=(
-                        len(dataloaders["train"]) // \
-                        (config["trainer"]["batch_size"] // config["dataset"]["train"]["batch_size"])
+    if config["prune"]:
+        dataloaders = {}
+        dataloaders["train"] = get_simple_dataloader(**config["dataset"]["train"])
+        dataloaders["dev"] = get_simple_dataloader(**config["dataset"]["dev"])
+
+        trainable_params = filter(lambda p: p.requires_grad, main_model.parameters())
+        optimizer = init_obj(config["optimizer"], torch.optim, trainable_params)
+
+        manager = ScheduledModifierManager.from_yaml(config["prune_recipe_path"])
+        optimizer = manager.modify(main_model, optimizer, 
+                        steps_per_epoch=(
+                            len(dataloaders["train"]) // \
+                            (config["trainer"]["batch_size"] // config["dataset"]["train"]["batch_size"])
+                        )
                     )
-                )
+        config["trainer"]["epochs"] = config["prune_epochs"]
 
-    trainer = SimpleShortCausalTrainer(speaker_handler,
-                                       main_model,
-                                       criterion,
-                                       metrics,
-                                       optimizer,
-                                       config,
-                                       logger,
-                                       device,
-                                       dataloaders,
-                                       streamer,
-                                       len_epoch=config["trainer"].get("len_epoch", None))
+        trainer = SimpleShortCausalTrainer(speaker_handler,
+                                           main_model,
+                                           criterion,
+                                           metrics,
+                                           optimizer,
+                                           config,
+                                           logger,
+                                           device,
+                                           dataloaders,
+                                           streamer,
+                                           len_epoch=config["trainer"].get("len_epoch", None))
+        trainer.train()
 
-    trainer.train()
+        manager.finalize(main_model)
 
-    manager.finalize(main_model)
+        additional_steps = config["trainer"]["epochs"] * (len(dataloaders["train"]) // \
+                            (config["trainer"]["batch_size"] // config["dataset"]["train"]["batch_size"]))
+
+    if config["quantize"]:
+        config["trainer"]["epochs"] = config["quantize_epochs"]
+        config["dataset"]["train"]["max_length"] = int(config["dataset"]["train"]["max_length"] * 0.1)
+        config["dataset"]["dev"]["max_length"] = int(config["dataset"]["dev"]["max_length"] * 0.1)
+
+        dataloaders = {}
+        dataloaders["train"] = get_simple_dataloader(**config["dataset"]["train"])
+        dataloaders["dev"] = get_simple_dataloader(**config["dataset"]["dev"])
+
+        trainable_params = filter(lambda p: p.requires_grad, main_model.parameters())
+        optimizer = init_obj(config["optimizer"], torch.optim, trainable_params)
+
+        manager = ScheduledModifierManager.from_yaml(config["quntize_recipe_path"])
+        optimizer = manager.modify(main_model, optimizer, 
+                        steps_per_epoch=(
+                            len(dataloaders["train"]) // \
+                            (config["trainer"]["batch_size"] // config["dataset"]["train"]["batch_size"])
+                        )
+                    )
+
+        trainer = SimpleShortCausalTrainer(speaker_handler,
+                                           main_model,
+                                           criterion,
+                                           metrics,
+                                           optimizer,
+                                           config,
+                                           logger,
+                                           device,
+                                           dataloaders,
+                                           streamer,
+                                           len_epoch=config["trainer"].get("len_epoch", None), 
+                                           additional_steps=additional_steps)
+    
+        trainer.train()
+
+        manager.finalize(main_model)
 
     if config["prune"]:    
         logger.info("main_model sparsity:")

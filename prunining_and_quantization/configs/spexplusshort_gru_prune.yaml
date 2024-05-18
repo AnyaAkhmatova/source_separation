@@ -1,17 +1,20 @@
 name: "spexplusshort_gru_prune_30"
 wandb_project: "online_target_source_separation"
 n_gpu: 2
-resume: "./model_best.pth"
-recipe_path: "./prunining_and_quantization/recipes/recipe_prune_30.yaml"
+resume: "/kaggle/input/gru-best-model/model_best-11.pth"
 speaker_handler_name: "speaker_handler"
 main_model_name: "main_model"
 time_dim: 239
 prune: True
+prune_epochs: 6
+prune_recipe_path: "./prunining_and_quantization/recipes/recipe_prune_only.yaml"
 quantize: False
+quantize_epochs: 0
+quatize_recipe_path: None
 dataset:
   sr: 16000
   train:
-    root: "./data/ss_dataset"
+    root: "/kaggle/input/otss-dataset/data/ss_dataset"
     part: "train"
     batch_size: 4
     n_speakers: 256
@@ -19,7 +22,7 @@ dataset:
     num_workers: 8
     pin_memory: True
   dev:
-    root: "./data/ss_dataset"
+    root: "/kaggle/input/otss-dataset/data/ss_dataset"
     part: "dev"
     batch_size: 4
     max_length: 5000
@@ -59,5 +62,5 @@ train_metrics: ["ACC"]
 dev_metrics: []
 trainer:
   batch_size: 16
-  epochs: 8
+  epochs: 0
   grad_norm_clip: 1000
