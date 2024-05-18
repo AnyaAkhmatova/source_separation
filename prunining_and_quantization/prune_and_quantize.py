@@ -77,19 +77,22 @@ def run_training(rank, world_size, config, save_dir):
     main_model = main_model.to(device)
     main_model = DistributedDataParallel(main_model, find_unused_parameters=True)
 
-    logger.info(speaker_handler)
-    logger.info(main_model)
-    logger.info("n_speakers: " + str(config["dataset"]["train"]["n_speakers"]))
+    if rank == 0:
+        logger.info(speaker_handler)
+        logger.info(main_model)
+        logger.info("n_speakers: " + str(config["dataset"]["train"]["n_speakers"]))
 
-    if config.get('resume') is None:
+    if rank == 0 and config.get('resume') is None:
         raise ValueError("Please specify resume path")
-    logger.info("Loading checkpoint: {} ...".format(config['resume']))
+    if rank == 0:
+        logger.info("Loading checkpoint: {} ...".format(config['resume']))
     checkpoint = torch.load(config['resume'], device)
     speaker_handler.load_state_dict(checkpoint["model"], strict=False)
     main_model.load_state_dict(checkpoint["model"], strict=False)
-    logger.info(
-        "Checkpoint loaded"
-    )
+    if rank == 0:
+        logger.info(
+            "Checkpoint loaded"
+        )
 
     speaker_handler.eval()
     main_model.train()
