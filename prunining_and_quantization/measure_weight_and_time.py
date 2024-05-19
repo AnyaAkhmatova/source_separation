@@ -22,8 +22,8 @@ warnings.filterwarnings("ignore")
 
 SEED = 42
 torch.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = True
+# torch.backends.cudnn.deterministic = True
+# torch.backends.cudnn.benchmark = True
 np.random.seed(SEED)
 random.seed(SEED)
 
@@ -55,13 +55,12 @@ def run(config, logger, device):
     chunks_nums = []
 
     for batch_idx, batch in enumerate(tqdm(dataloader, desc="measuring_gpu_time", total=num_iters)):
-        if batch_idx + 1 >= num_iters:
+        if batch_idx >= num_iters:
             break
 
-        mix, ref = batch["mix"], batch["ref"]
-        mix_chunks, n_chunks = streamer.make_chunks(mix)
-        mix_chunks = mix_chunks.to(device)
-        ref = ref.to(device)
+        batch["mix_chunks"], n_chunks = streamer.make_chunks(batch["mix"])
+        batch["mix_chunks"] = batch["mix_chunks"].to(device)
+        batch["ref"] = batch["ref"].to(device)
 
         if gpu:
             start = time.time()
@@ -165,14 +164,14 @@ def run(config, logger, device):
 
             start = time.time()
 
-            ref_vec, logits = speaker_handler_session.run(None, {"ref": ref.numpy()})
+            ref_vec, logits = speaker_handler_session.run(None, {"ref": batch["ref"].numpy()})
             ref_vec = ref_vec.numpy()
 
             batch["s1"] = []
             memory = torch.zeros((1, config["main_model"]["memory_size"], config["time_dim"]), 
                                  dtype=torch.float32, device=device)
             for i in range(n_chunks):
-                chunk = mix_chunks[i: i + 1, :]
+                chunk = batch["mix_chunks"][i: i + 1, :]
 
                 s1_chunk, new_memory = main_model_session.run(None, {"chunk": chunk.numpy(), "ref_vec": ref_vec, "memory": memory.numpy()})
 
@@ -184,8 +183,8 @@ def run(config, logger, device):
             end = time.time()
 
         times.append(end - start)
-        mix_lengths.append(mix.shape[-1]/config["dataset"]["sr"])
-        ref_lengths.append(ref.shape[-1]/config["dataset"]["sr"])
+        mix_lengths.append(batch["mix"].shape[-1]/config["dataset"]["sr"])
+        ref_lengths.append(batch["ref"].shape[-1]/config["dataset"]["sr"])
         chunks_nums.append(n_chunks)
 
     mean_time = np.array(times).mean()
