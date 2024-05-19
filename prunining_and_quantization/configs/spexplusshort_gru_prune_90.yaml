@@ -1,7 +1,7 @@
 name: "spexplusshort_gru_prune_90"
 wandb_project: "online_target_source_separation"
 n_gpu: 2
-resume: "/kaggle/input/smaller-models/model_best-21.pth"
+resume: "/kaggle/input/smaller-models/model_best-20.pth"
 speaker_handler_name: "speaker_handler"
 main_model_name: "main_model"
 time_dim: 239
