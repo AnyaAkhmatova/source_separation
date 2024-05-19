@@ -165,7 +165,6 @@ def run(config, logger, device):
             start = time.time()
 
             ref_vec, logits = speaker_handler_session.run(None, {"ref": batch["ref"].numpy()})
-            ref_vec = ref_vec.numpy()
 
             batch["s1"] = []
             memory = torch.zeros((1, config["main_model"]["memory_size"], config["time_dim"]), 
@@ -176,7 +175,7 @@ def run(config, logger, device):
                 s1_chunk, new_memory = main_model_session.run(None, {"chunk": chunk.numpy(), "ref_vec": ref_vec, "memory": memory.numpy()})
 
                 batch["s1"].append(torch.tensor(s1_chunk))
-                memory = new_memory
+                memory = torch.tensor(new_memory)
             
             batch["s1"] = torch.cat(batch["s1"], dim=0)
 
