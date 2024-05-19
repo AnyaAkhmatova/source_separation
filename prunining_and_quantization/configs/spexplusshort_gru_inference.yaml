@@ -10,7 +10,7 @@ save_dir: "inference_results"
 dataset:
   sr: 16000
   inference:
-    root: "./data/ss_dataset"
+    root: "/kaggle/input/otss-dataset/data/ss_dataset"
     part: "test"
     max_length: 3000
     test_mode: False
@@ -20,20 +20,20 @@ streamer:
   chunk_step: 2400
   overlap_add_method: "half"
 speaker_handler:
-  n_channels: 256
-  out_channels: 100
+  n_channels: 192
+  out_channels: 75
   short_kernel: 40
   n_resnetblocks: 3
   n_speakers: 256
 main_model:
-  n_channels: 256
-  hidden_channels: 512
-  out_channels: 100
+  n_channels: 192
+  hidden_channels: 384
+  out_channels: 75
   short_kernel: 40
   n_stacked_tcnblocks: 4
   n_tcnblocks: 6
   causal: False
-  memory_size: 128
+  memory_size: 96
 loss:
   type: "SpexPlusShortLoss"
   args: {}
