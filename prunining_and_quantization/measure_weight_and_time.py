@@ -34,7 +34,7 @@ def run(config, logger, device):
 
     streamer = Streamer(**config["streamer"])
 
-    gpu = config["mode"]
+    gpu = (config["mode"] == "gpu")
 
     speaker_handler_session = onnxruntime.InferenceSession(config["speaker_handler_path"], 
                                                            providers=['CUDAExecutionProvider' if gpu else 'CPUExecutionProvider'])

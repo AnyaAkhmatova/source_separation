@@ -101,7 +101,7 @@ def run(config, logger, device):
     model.eval()
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="measuring_gpu_time", total=num_iters)):
-            if batch_idx + 1 >= num_iters:
+            if batch_idx >= num_iters:
                 break
 
             mix, ref = batch["mix"], batch["ref"]
