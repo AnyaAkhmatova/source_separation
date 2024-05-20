@@ -1,18 +1,19 @@
-name: "spexplusshort_gru_version3_test"
+name: "spexplusshort_gru_inference"
 wandb_project: "online_target_source_separation"
-resume: "../training/outputs/2024-05-04/21-51-46/checkpoint-epoch50.pth"
-n_gpu: 2
+resume: "./model_best.pth"
+n_gpu: 1
 sr: 16000
-log_step: 250
+log_step: 500
+save_inference: False
+save_dir: "./inference_results"
 dataset:
   sr: 16000
-  test:
-    root: "../../data/data/ss_dataset"
+  inference:
+    root: "./data/ss_dataset"
     part: "test"
-    batch_size: 1
     max_length: 3000
+    test_mode: True
     num_workers: 8
-    pin_memory: False
 streamer:
   chunk_window: 4800
   chunk_step: 2400
@@ -25,13 +26,17 @@ arch:
     out_channels: 100
     short_kernel: 40
     n_resnetblocks: 3
+    n_speakers: 256
     n_stacked_tcnblocks: 4
     n_tcnblocks: 6
     dimension: "channels"
-    n_speakers: 256
     causal: False
-    version: 3
-    time_dim: 239
+    memory_size: 128
+    version: 0
+inferencer:
+  type: "ShortCausalInferencer"
+  args: 
+    type: "gru"
 loss:
   type: "SpexPlusShortLoss"
   args: {}

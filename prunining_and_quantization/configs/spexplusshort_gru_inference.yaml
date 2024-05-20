@@ -6,7 +6,7 @@ sr: 16000
 log_step: 250
 time_dim: 239
 save_inference: False
-save_dir: "inference_results"
+save_dir: "./inference_results"
 dataset:
   sr: 16000
   inference:

@@ -102,7 +102,7 @@ class SpexPlusShortRNN(nn.Module):
         # validating/testing: work with all chunks inside model.forward as
         # we still have full access to the audios and can simplify training code
         # inferencing: need to use one_chunk=True and specialized inferencer
-        # to follow sequential chunk processing logic outside model.forward (will be written later)
+        # to follow sequential chunk processing logic outside model.forward
         if not one_chunk: # have x and ref
             batch_size = ref.shape[0]
             n_chunks = x.shape[0] // ref.shape[0]

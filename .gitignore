@@ -114,4 +114,4 @@ wandb/
 .idea/
 __MACOSX/
 
-*.sbatch
+

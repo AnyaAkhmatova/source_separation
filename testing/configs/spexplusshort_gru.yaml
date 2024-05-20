@@ -1,17 +1,16 @@
-name: "spexplusshort_test"
+name: "spexplusshort_gru_test"
 wandb_project: "online_target_source_separation"
-resume: "../training/outputs/2024-04-22/10-43-45/model_best.pth"
+resume: "./model_best.pth"
 n_gpu: 1
 sr: 16000
-n_speakers: 921
 log_step: 500
 dataset:
   sr: 16000
   test:
-    root: "../../data/ss_data_new/"
+    root: "./data/ss_dataset/"
     part: "test"
     batch_size: 1
-    max_length: 1000000
+    max_length: 3000
     num_workers: 8
     pin_memory: False
 streamer:
@@ -19,17 +18,30 @@ streamer:
   chunk_step: 2400
   overlap_add_method: "half"
 arch:
-  type: "SpexPlusShort"
+  type: "SpexPlusShortGRUModel"
   args: 
     n_channels: 256
     hidden_channels: 512
     out_channels: 100
     short_kernel: 40
     n_resnetblocks: 3
+    n_speakers: 256
     n_stacked_tcnblocks: 4
-    n_tcnblocks: 5
+    n_tcnblocks: 6
+    dimension: "channels"
     causal: False
+    memory_size: 128
+    version: 0
 loss:
   type: "SpexPlusShortLoss"
   args: {}
-metrics: []
+metrics:
+  - type: "SISDR"
+    args: {}
+  - type: "SNR"
+    args: {}
+  - type: "STOI"
+    args: 
+      fs: 16000
+  - type: "CompositeMetric"
+    args: {}

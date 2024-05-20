@@ -11,7 +11,7 @@ mix_generation_args:
   audio_len: 3
   ref_max_len: 10
 train:
-  part: "train-clean-360"
+  part: "train-clean-100"
   out_folder: "../../data/ss_dataset/train/"
   max_n_speakers: 1000000000
   nfiles: 8000

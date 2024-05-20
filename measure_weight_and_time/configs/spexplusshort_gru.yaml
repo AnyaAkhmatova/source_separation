@@ -1,5 +1,5 @@
-resume: "./model_best_gru_cont2.pth"
-num_iters: 10
+resume: "./model_best.pth"
+num_iters: 100
 mode: "gpu"
 dataset:
   sr: 16000
@@ -8,7 +8,7 @@ dataset:
     part: "test"
     batch_size: 1
     max_length: 3000
-    num_workers: 1
+    num_workers: 8
     pin_memory: False
 streamer:
   chunk_window: 4800
@@ -22,10 +22,10 @@ arch:
     out_channels: 100
     short_kernel: 40
     n_resnetblocks: 3
+    n_speakers: 256
     n_stacked_tcnblocks: 4
     n_tcnblocks: 6
     dimension: "channels"
-    n_speakers: 256
     causal: False
     memory_size: 128
     version: 0
