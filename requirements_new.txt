@@ -1,0 +1,28 @@
+torch==2.1.1
+numpy
+tqdm
+matplotlib
+pandas
+
+torchvision==0.16.1
+torchaudio==2.1.1
+pesq
+pystoi
+torchmetrics
+
+librosa
+soundfile
+pyloudnorm
+
+wandb
+hydra-core
+
+sparseml
+deepsparse
+
+# onnxruntime-gpu
+# onnx
+onnx_opcounter
+thop
+
+

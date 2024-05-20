@@ -1,11 +1,11 @@
-torch==2.1.1
+torch
 numpy
 tqdm
 matplotlib
 pandas
 
-torchvision==0.16.1
-torchaudio==2.1.1
+torchvision
+torchaudio
 pesq
 pystoi
 torchmetrics
@@ -17,12 +17,4 @@ pyloudnorm
 wandb
 hydra-core
 
-sparseml
-deepsparse
-
-# onnxruntime-gpu
-# onnx
-
-onnx_opcounter
 thop
-
